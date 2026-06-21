@@ -1,49 +1,76 @@
-# Synergy
+# Synergy (Deskflow) - Build & Usage Guide
 
-[![CodeQL Analysis](https://github.com/symless/synergy/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/symless/synergy/actions/workflows/codeql-analysis.yml)
-[![SonarCloud Analysis](https://github.com/symless/synergy/actions/workflows/sonarcloud-analysis.yml/badge.svg)](https://github.com/symless/synergy/actions/workflows/sonarcloud-analysis.yml)
+This repository contains the open-source codebase for **Synergy** (also known as the upstream **Deskflow** project), a keyboard and mouse sharing utility that allows you to seamlessly control multiple computers using a single mouse and keyboard.
 
-Use the keyboard, mouse, or trackpad of one computer to control nearby computers, and work seamlessly between them.
+By compiling the code directly from source, you can build and use ready-to-run binaries on your local machines completely for free without commercial serialization restrictions.
 
-- [Get Synergy](https://symless.com/synergy)
-- [Technical support](https://symless.com/synergy/contact)
+---
 
-This repository contains the source code used to build Synergy 1 and the Core for Synergy 3.
-It's based on the upstream Deskflow community project, which is sponsored by Synergy.
+## 🛠️ Project Status & Current Build
+This fork is pre-configured and optimized to build natively on **Windows 11 / Windows 10** using **Visual Studio 2022 (MSVC)** and **Qt 6.9.3**.
+- **Version:** `1.20.4-dev`
+- **Compiler Options:** Patched with exceptions handling rules (`/EHsc`) to ensure clean compilation under strict warnings.
 
-- [Contibute to Deskflow](https://deskflow.org)
+---
 
-## FAQ
+## 🚀 How to Utilize (Pre-Compiled Build)
 
-### How do I build the source code?
-If you're a customer, you generally don’t need to build Synergy yourself as we provide pre-built, tested releases.
-However, if you're a customer looking to build Synergy from source, [contact us](https://symless.com/synergy/contact) so we can help with that.
-If you're a developer looking to contribute to an open source community, join us in our [Deskflow](https://deskflow.org) project.
+If you have already compiled the binaries on this machine, they are located inside the `build/bin/` folder.
 
-### What’s the difference between Synergy and Deskflow?
-Synergy is a stable, supported commercial product. It is quality assurance tested, has a warranty, and is maintained by a team of full-time engineers.
-Deskflow is the upstream project where the open source community, including Synergy engineers, prototype and iterate on new features.
-Synergy is your business-ready solution; Deskflow is for open source contributors and early adopters.
+### Quick Start (Automated Script)
+To start Synergy automatically along with its required background system service, we've bundled a batch script inside the build folder:
 
-### Where should I file bugs or feature requests?
-For supported customers, reach out to our [support team](https://symless.com/synergy/contact) and we’ll triage and track issues internally.
-If you're contributing to the community project, use [Deskflow issues](https://github.com/deskflow/deskflow/issues) to report bugs or request features.
+1. Navigate to: `d:\Ithiya\synergy\build\bin\`
+2. Right-click **`start_synergy.bat`** and select **Run as Administrator** (Admin rights are required to install the system daemon service).
+3. The script will register the service, start it, and launch the Synergy configuration window.
 
-### Can I contribute code to Synergy?
-We welcome contributions, but our community development happens upstream in Deskflow. 
-That’s the best place to propose changes and collaborate with the wider community. 
-Changes flow downstream to Synergy once they have matured enough and are ready for customer usage.
+### Manual Launch
+If you prefer running manual commands (from an Administrator terminal):
 
-### How often does Deskflow merge into Synergy?
-We regularly port stable features and fixes from Deskflow into Synergy.
-This involves QA, integration testing, and compliance review. Critical bug fixes are fast-tracked.
-For specific timelines on particular bug fixes and features, please [get in touch](https://symless.com/synergy/contact).
+1. **Install and start the background daemon:**
+   ```powershell
+   & "d:\Ithiya\synergy\build\bin\synergy-daemon.exe" --install
+   Start-Service "Synergy"
+   ```
+2. **Launch the GUI:**
+   ```powershell
+   & "d:\Ithiya\synergy\build\bin\synergy.exe"
+   ```
 
-### Is Deskflow stable?
-Deskflow is intended for developers and contributors who can self-support and fix issues.
-It’s not suitable for production or business-critical environments requiring stability guarantees.
-For those cases, we recommend using Synergy.
+---
 
-### Why have two projects?
-This model lets us move fast without breaking things. Deskflow empowers rapid community-driven innovation.
-Synergy delivers a stable, supported experience to customers.
+## 🔧 Building from Source
+
+If you want to pull future updates or rebuild the project from scratch, follow these instructions.
+
+### Prerequisites (Installed on this system)
+1. **Visual Studio 2022 (MSVC)** with the *C++ Desktop Development* workload.
+2. **CMake** (v3.22+) and **Ninja** (both bundled inside Visual Studio).
+3. **vcpkg** (Installed at `D:\vcpkg`).
+4. **Qt 6.9.3 MSVC 64-bit** (Installed at `C:\Qt\6.9.3\msvc2022_64` via `aqt`).
+
+### Step-by-Step Compilation
+
+1. **Install Python dependencies:**
+   ```powershell
+   python scripts/install_deps.py
+   ```
+2. **Configure CMake & Triplet Dependencies:**
+   Open a terminal and set up the build system using vcpkg and the Qt installation path:
+   ```powershell
+   $env:VCPKG_ROOT = "D:\vcpkg"
+   $env:QT_PATH = "C:\Qt\6.9.3\msvc2022_64"
+   
+   cmd.exe /c "call `"D:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat`" && `"D:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.EXE`" -B build --preset=windows-release -DCMAKE_MAKE_PROGRAM=`"D:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\Ninja\ninja.EXE`""
+   ```
+3. **Build the Release Executables:**
+   ```powershell
+   cmd.exe /c "call `"D:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat`" && `"D:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.EXE`" --build build -j8"
+   ```
+
+All compiled binaries will be outputted to [build/bin/](file:///d:/Ithiya/synergy/build/bin).
+
+---
+
+## 📄 License & Upstream Contribution
+This software is licensed under the GPL-3.0 License. If you wish to contribute changes back to the main branch, please visit the upstream development page at [Deskflow Community Github](https://github.com/deskflow/deskflow).
