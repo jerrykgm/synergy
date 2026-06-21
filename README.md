@@ -72,5 +72,42 @@ All compiled binaries will be outputted to [build/bin/](file:///d:/Ithiya/synerg
 
 ---
 
+## 🍏 Utilizing on macOS (Mac)
+
+To connect your macOS computer with your Windows PC, you can compile Synergy on your Mac or run an existing build.
+
+### Building on macOS
+1. **Install dependencies** (requires Homebrew):
+   ```bash
+   brew install cmake ninja qt@6 openssl
+   ```
+2. **Configure and Build:**
+   ```bash
+   cmake -B build --preset=macos-release -DQT_PATH="$(brew --prefix qt@6)"
+   cmake --build build -j$(sysctl -n hw.ncpu)
+   ```
+3. The executable output will be located in `build/bin/Deskflow.app`.
+
+---
+
+## 🤖 Utilizing on Android
+
+Deskflow/Synergy supports Android as a client (allowing you to control your Android device using your PC's keyboard and mouse). 
+
+### Setup via Deskflow Android App
+1. Compile or download the Deskflow Android client app (`.apk`).
+2. **Configure SDK Build Environment (Optional):**
+   To compile the APK yourself, you will need the Android SDK & NDK installed:
+   ```bash
+   # Configure Android toolchain path
+   cmake -B build-android -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake
+   cmake --build build-android
+   ```
+3. Install the generated `.apk` on your Android device.
+4. Open the app on Android, type in your Windows PC's local IP address, and press **Connect**.
+
+---
+
 ## 📄 License & Upstream Contribution
 This software is licensed under the GPL-3.0 License. If you wish to contribute changes back to the main branch, please visit the upstream development page at [Deskflow Community Github](https://github.com/deskflow/deskflow).
+
