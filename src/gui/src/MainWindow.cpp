@@ -279,60 +279,6 @@ void MainWindow::connectSlots()
   connect(&m_NetworkDiscovery, &NetworkDiscovery::serverLost,       this, &MainWindow::onServerLost);
 }
 
-void MainWindow::onServerDiscovered(const DiscoveredServer &server)
-{
-  // Remove placeholder "Scanning..." item on first real discovery
-  if (m_pComboDiscoveredServers->count() == 1 &&
-      m_pComboDiscoveredServers->itemText(0) == tr("Scanning...")) {
-    m_pComboDiscoveredServers->clear();
-  }
-
-  // Avoid duplicates
-  const QString label = QString("%1 (%2)").arg(server.hostname, server.ip);
-  for (int i = 0; i < m_pComboDiscoveredServers->count(); ++i) {
-    if (m_pComboDiscoveredServers->itemData(i).toString() == server.ip) {
-      m_pComboDiscoveredServers->setItemText(i, label);
-      return;
-    }
-  }
-
-  m_pComboDiscoveredServers->addItem(label, server.ip);
-  qInfo("Discovered Synergy server: %s (%s)", qPrintable(server.hostname), qPrintable(server.ip));
-}
-
-void MainWindow::onServerLost(const QString &ip)
-{
-  for (int i = 0; i < m_pComboDiscoveredServers->count(); ++i) {
-    if (m_pComboDiscoveredServers->itemData(i).toString() == ip) {
-      m_pComboDiscoveredServers->removeItem(i);
-      qInfo("Synergy server lost: %s", qPrintable(ip));
-      break;
-    }
-  }
-
-  if (m_pComboDiscoveredServers->count() == 0) {
-    m_pComboDiscoveredServers->addItem(tr("No servers found"));
-  }
-}
-
-void MainWindow::on_m_pButtonRescan_clicked()
-{
-  m_pComboDiscoveredServers->clear();
-  m_pComboDiscoveredServers->addItem(tr("Scanning..."));
-  m_NetworkDiscovery.stop();
-  m_NetworkDiscovery.startListening();
-  if (m_CoreProcess.mode() == CoreMode::Server) {
-    m_NetworkDiscovery.startBroadcasting(m_AppConfig.screenName(), 24800);
-  }
-}
-
-void MainWindow::on_m_pComboDiscoveredServers_activated(int index)
-{
-  const QString ip = m_pComboDiscoveredServers->itemData(index).toString();
-  if (!ip.isEmpty()) {
-    m_pLineEditHostname->setText(ip);
-  }
-}
 
 void MainWindow::onAppAboutToQuit()
 {
@@ -601,6 +547,9 @@ void MainWindow::on_m_pComboDiscoveredServers_activated(int index)
   if (!ip.isEmpty()) {
     m_pLineEditHostname->setText(ip);
     m_CoreProcess.setAddress(ip);
+    // Auto-apply and restart process immediately to connect
+    m_ClientConnection.setShowMessage();
+    m_CoreProcess.restart();
   }
 }
 
@@ -614,18 +563,28 @@ void MainWindow::onServerDiscovered(const DiscoveredServer &server)
   }
 
   // Avoid duplicate entries
+  bool alreadyExists = false;
   for (int i = 1; i < m_pComboDiscoveredServers->count(); ++i) {
     if (m_pComboDiscoveredServers->itemData(i).toString() == server.ip) {
       // Update display name in case hostname changed
       m_pComboDiscoveredServers->setItemText(i, QString("%1 (%2)").arg(server.hostname, server.ip));
-      return;
+      alreadyExists = true;
+      break;
     }
   }
 
-  m_pComboDiscoveredServers->addItem(
-      QString("%1 (%2)").arg(server.hostname, server.ip),
-      server.ip
-  );
+  if (!alreadyExists) {
+    m_pComboDiscoveredServers->addItem(
+        QString("%1 (%2)").arg(server.hostname, server.ip),
+        server.ip
+    );
+  }
+
+  // If the hostname line edit is empty, auto-populate it to make connection easier
+  if (m_pLineEditHostname->text().trimmed().isEmpty()) {
+    m_pLineEditHostname->setText(server.ip);
+    m_CoreProcess.setAddress(server.ip);
+  }
 }
 
 void MainWindow::onServerLost(const QString &ip)

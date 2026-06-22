@@ -123,4 +123,9 @@ elseif(WIN32)
     COMMENT "Deploying Qt runtime for ${GUI_BINARY_NAME}.exe"
   )
 
+
 endif()
+
+# Force CMake to re-glob and find NetworkDiscovery files
+
+

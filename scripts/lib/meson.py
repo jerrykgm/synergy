@@ -74,8 +74,9 @@ class Meson:
     def install(self):
         cmd = [MESON_BIN, "install", "-C", self.build_dir]
 
-        has_sudo = cmd_utils.has_command("sudo")
-        if has_sudo:
-            cmd.insert(0, "sudo")
+        if not env.is_windows():
+            has_sudo = cmd_utils.has_command("sudo")
+            if has_sudo:
+                cmd.insert(0, "sudo")
 
         cmd_utils.run(cmd, print_cmd=True)

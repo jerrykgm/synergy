@@ -40,6 +40,7 @@ int main(int argc, char **argv)
 #if SYSAPI_WIN32
   // record window instance for tray icon, etc
   ArchMiscWindows::setInstanceWin32(GetModuleHandle(NULL));
+  SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 #endif
 
   Arch arch;
