@@ -937,29 +937,27 @@ void MainWindow::updateStatus()
   const auto process = m_CoreProcess.processState();
 
   switch (process) {
-    using enum CoreProcessState;
 
-  case Starting:
+  case CoreProcessState::Starting:
     setStatus(QString("%1 is starting...").arg(kAppName));
     break;
 
-  case RetryPending:
+  case CoreProcessState::RetryPending:
     setStatus(QString("%1 will retry in a moment...").arg(kAppName));
     break;
 
-  case Stopping:
+  case CoreProcessState::Stopping:
     setStatus(QString("%1 is stopping...").arg(kAppName));
     break;
 
-  case Stopped:
+  case CoreProcessState::Stopped:
     setStatus(QString("%1 is not running").arg(kAppName));
     break;
 
-  case Started: {
+  case CoreProcessState::Started: {
     switch (connection) {
-      using enum CoreConnectionState;
 
-    case Listening: {
+    case CoreConnectionState::Listening: {
       if (m_CoreProcess.mode() == CoreMode::Server) {
         setStatus(QString("%1 is waiting for clients").arg(kAppName));
       }
@@ -967,11 +965,11 @@ void MainWindow::updateStatus()
       break;
     }
 
-    case Connecting:
+    case CoreConnectionState::Connecting:
       setStatus(QString("%1 is connecting...").arg(kAppName));
       break;
 
-    case Connected: {
+    case CoreConnectionState::Connected: {
       if (m_SecureSocket) {
         setStatus(QString("%1 is connected (with %2)").arg(kAppName, m_CoreProcess.secureSocketVersion()));
       } else {
@@ -980,7 +978,7 @@ void MainWindow::updateStatus()
       break;
     }
 
-    case Disconnected:
+    case CoreConnectionState::Disconnected:
       setStatus(QString("%1 is disconnected").arg(kAppName));
       break;
     }

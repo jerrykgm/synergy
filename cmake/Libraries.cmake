@@ -128,7 +128,9 @@ macro(configure_unix_libs)
   # pthread is used on both Linux and Mac
   check_library_exists("pthread" pthread_create "" HAVE_PTHREAD)
   if(HAVE_PTHREAD)
-    list(APPEND libs pthread)
+    if(NOT APPLE)
+      list(APPEND libs pthread)
+    endif()
   else()
     message(FATAL_ERROR "Missing library: pthread")
   endif()
@@ -186,15 +188,20 @@ endmacro()
 #
 macro(configure_mac_libs)
 
-  set(CMAKE_CXX_FLAGS
-      "--sysroot ${CMAKE_OSX_SYSROOT} ${CMAKE_CXX_FLAGS} -DGTEST_USE_OWN_TR1_TUPLE=1"
-  )
+  # Note: CMAKE_OSX_SYSROOT is handled by CMake natively; don't duplicate with --sysroot
+  # in CMAKE_CXX_FLAGS as it causes the compiler driver to pass conflicting -syslibroot
+  # to the linker, breaking framework lookups.
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DGTEST_USE_OWN_TR1_TUPLE=1")
 
-  find_library(lib_ScreenSaver ScreenSaver)
-  find_library(lib_IOKit IOKit)
-  find_library(lib_ApplicationServices ApplicationServices)
-  find_library(lib_Foundation Foundation)
-  find_library(lib_Carbon Carbon)
+  # Use -framework flags directly rather than find_library to avoid sysroot issues.
+  # CMake's find_library() returns absolute paths which the linker may fail to resolve
+  # when the sysroot doesn't contain certain frameworks (e.g. ScreenSaver).
+  set(lib_ScreenSaver "-framework ScreenSaver")
+  set(lib_IOKit "-framework IOKit")
+  set(lib_ApplicationServices "-framework ApplicationServices")
+  set(lib_Foundation "-framework Foundation")
+  set(lib_Carbon "-framework Carbon")
+  set(lib_UserNotifications "-framework UserNotifications")
 
   list(
     APPEND
@@ -203,10 +210,8 @@ macro(configure_mac_libs)
     ${lib_IOKit}
     ${lib_ApplicationServices}
     ${lib_Foundation}
-    ${lib_Carbon})
-
-  find_library(lib_UserNotifications UserNotifications)
-  list(APPEND libs ${lib_UserNotifications})
+    ${lib_Carbon}
+    ${lib_UserNotifications})
 
   add_definitions(-DWINAPI_CARBON=1 -D_THREAD_SAFE)
 
@@ -588,6 +593,7 @@ macro(configure_gtest)
       # the required libraries (e.g. gmock) on some OS (e.g macOS with brew).
       set(GTEST_LIB GTest::gtest)
       set(GMOCK_LIB GTest::gmock)
+      include_directories(SYSTEM /usr/local/Cellar/googletest/1.17.0/include)
     else()
       message(
         FATAL_ERROR
