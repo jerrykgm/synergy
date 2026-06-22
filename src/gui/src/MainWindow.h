@@ -37,6 +37,7 @@
 #include "gui/core/ServerConnection.h"
 #include "gui/core/WaylandWarnings.h"
 #include "gui/tls/TlsUtility.h"
+#include "NetworkDiscovery.h"
 #include "ui_MainWindowBase.h"
 
 class QAction;
@@ -144,6 +145,10 @@ private slots:
   void on_m_pLineEditClientIp_returnPressed();
   void on_m_pLineEditHostname_textChanged(const QString &text);
   void on_m_pLineEditClientIp_textChanged(const QString &text);
+  void on_m_pButtonRescan_clicked();
+  void on_m_pComboDiscoveredServers_activated(int index);
+  void onServerDiscovered(const DiscoveredServer &server);
+  void onServerLost(const QString &ip);
 
 private:
   AppConfig &appConfig()
@@ -219,4 +224,5 @@ private:
   deskflow::gui::ClientConnection m_ClientConnection;
   deskflow::gui::TlsUtility m_TlsUtility;
   QTimer m_WindowSaveTimer;
+  NetworkDiscovery m_NetworkDiscovery;
 };
