@@ -153,10 +153,20 @@ class SynergyAccessibilityService : AccessibilityService() {
 
     fun showKeyboard() {
         isSynergyActive = false
+        mainHandler.post {
+            try {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                    softKeyboardController.showMode = android.accessibilityservice.AccessibilityService.SHOW_MODE_AUTO
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     private fun suppressKeyboard() {
         try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                softKeyboardController.showMode = android.accessibilityservice.AccessibilityService.SHOW_MODE_HIDDEN
+            }
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             val token = if (::overlayView.isInitialized) overlayView.windowToken else null
             if (token != null) imm.hideSoftInputFromWindow(token, 0)
