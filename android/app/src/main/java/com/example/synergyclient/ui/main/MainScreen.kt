@@ -254,7 +254,8 @@ fun MainScreen(
         ActivityLog(
             logs      = logs,
             listState = listState,
-            onClear   = { logs.clear() }
+            onClear   = { logs.clear() },
+            modifier  = Modifier.weight(1f)
         )
     }
 }
@@ -649,6 +650,7 @@ private fun ActivityLog(
     logs:      List<String>,
     listState: androidx.compose.foundation.lazy.LazyListState,
     onClear:   () -> Unit,
+    modifier:  Modifier = Modifier,
 ) {
     val green = Green; val red = Red; val accentB = AccentB; val text = TextCol
 
@@ -656,7 +658,7 @@ private fun ActivityLog(
         shape    = RoundedCornerShape(12.dp),
         color    = Color(0xFF0A0B10),
         border   = androidx.compose.foundation.BorderStroke(1.dp, Border),
-        modifier = Modifier.fillMaxWidth().weight(1f)
+        modifier = modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(

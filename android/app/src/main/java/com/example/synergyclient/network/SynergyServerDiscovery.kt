@@ -176,7 +176,7 @@ class SynergyServerDiscovery {
     }
 
     private suspend fun cleanupLoop() {
-        while (coroutineContext.isActive) {
+        while (currentCoroutineContext().isActive) {
             delay(CLEANUP_INTERVAL)
             val now    = System.currentTimeMillis()
             val stale  = mutableListOf<String>()
