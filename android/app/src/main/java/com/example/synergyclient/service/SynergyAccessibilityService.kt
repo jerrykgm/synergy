@@ -194,7 +194,8 @@ class SynergyAccessibilityService : AccessibilityService() {
         val cy = cursorY.toFloat()
 
         // Intercept top edge clicks to open notification menu (global action)
-        if (cy <= 25) {
+        if (cy <= 100) {
+            android.util.Log.i("SynergyApp", "Top-edge click detected at cy=$cy. Triggering GLOBAL_ACTION_NOTIFICATIONS")
             performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
         }
 
