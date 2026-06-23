@@ -49,6 +49,7 @@ fun MainScreen(
     var clientName   by remember { mutableStateOf(prefs.getString("client_name", "AndroidClient") ?: "AndroidClient") }
     var autoReconnect by remember { mutableStateOf(prefs.getBoolean("auto_reconnect", true)) }
     var loggingEnabled by remember { mutableStateOf(prefs.getBoolean("logging_enabled", true)) }
+    var isMacServerMode by remember { mutableStateOf(prefs.getBoolean("mac_server_mode", false)) }
 
     // ── Connection state ───────────────────────────────────────────────────
     var connectionStatus by remember { mutableStateOf("Disconnected") }
@@ -97,6 +98,7 @@ fun MainScreen(
             putString("client_name", clientName)
             putBoolean("auto_reconnect", autoReconnect)
             putBoolean("logging_enabled", loggingEnabled)
+            putBoolean("mac_server_mode", isMacServerMode)
             apply()
         }
     }
@@ -351,6 +353,26 @@ fun MainScreen(
                     Switch(
                         checked = loggingEnabled,
                         onCheckedChange = { loggingEnabled = it },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = accent
+                        )
+                    )
+                }
+
+                // Mac Server Mode toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text("Mac Server Mode", fontSize = 13.sp, color = text)
+                        Text("Maps Cmd+C/V to Ctrl+C/V", fontSize = 11.sp, color = muted)
+                    }
+                    Switch(
+                        checked = isMacServerMode,
+                        onCheckedChange = { isMacServerMode = it },
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Color.White,
                             checkedTrackColor = accent

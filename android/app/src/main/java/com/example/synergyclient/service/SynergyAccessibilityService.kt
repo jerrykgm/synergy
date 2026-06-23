@@ -41,6 +41,11 @@ class SynergyAccessibilityService : AccessibilityService() {
     private val textBuffer = StringBuilder()
     private var textBufferInitialized = false
 
+    private var lastClickTime = 0L
+
+    private val isMacServerMode: Boolean
+        get() = getSharedPreferences("synergy_prefs", Context.MODE_PRIVATE).getBoolean("mac_server_mode", false)
+
     // ── Lifecycle ─────────────────────────────────────────────────────────
 
     override fun onCreate() { super.onCreate(); instance = this }
@@ -135,15 +140,31 @@ class SynergyAccessibilityService : AccessibilityService() {
     fun moveCursorRelative(dx: Int, dy: Int) = updateCursor(cursorX + dx, cursorY + dy)
 
     fun clickCursor() {
-        // Use a tiny stroke (tap) at the current cursor position
+        val now = System.currentTimeMillis()
+        val isDoubleClick = (now - lastClickTime) < 400
+        lastClickTime = now
+
         val cx = cursorX.toFloat()
         val cy = cursorY.toFloat()
         val path = Path().apply { moveTo(cx, cy) }
-        dispatchGesture(
-            GestureDescription.Builder()
-                .addStroke(GestureDescription.StrokeDescription(path, 0, 1))
-                .build(), null, null
-        )
+
+        if (isDoubleClick) {
+            val stroke1 = GestureDescription.StrokeDescription(path, 0, 10)
+            val stroke2 = GestureDescription.StrokeDescription(path, 50, 10)
+            dispatchGesture(
+                GestureDescription.Builder()
+                    .addStroke(stroke1)
+                    .addStroke(stroke2)
+                    .build(), null, null
+            )
+            lastClickTime = 0L // reset to prevent triple taps
+        } else {
+            dispatchGesture(
+                GestureDescription.Builder()
+                    .addStroke(GestureDescription.StrokeDescription(path, 0, 10))
+                    .build(), null, null
+            )
+        }
     }
 
     fun scroll(dx: Int, dy: Int) {
@@ -191,8 +212,18 @@ class SynergyAccessibilityService : AccessibilityService() {
 
     fun handleKeyDown(keyId: Int, modifiers: Int) {
         mainHandler.post {
-            val ctrl  = (modifiers and 0x0004) != 0
-            val shift = (modifiers and 0x0001) != 0
+            val isShift = (modifiers and 0x0001) != 0
+            val isCtrl  = (modifiers and 0x0002) != 0
+            val isAlt   = (modifiers and 0x0004) != 0
+            val isCmd   = (modifiers and 0x0008) != 0
+
+            val ctrl = if (isMacServerMode) {
+                isCmd || isCtrl
+            } else {
+                isCtrl || isAlt // Alt fallback for historical compatibility
+            }
+
+            val shift = isShift
 
             if (ctrl) {
                 val lower = if (keyId in 0x41..0x5A) keyId + 32 else keyId
