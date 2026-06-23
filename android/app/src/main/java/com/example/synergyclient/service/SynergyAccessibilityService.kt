@@ -50,6 +50,20 @@ class SynergyAccessibilityService : AccessibilityService() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         overlayView = CursorOverlayView(this)
 
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+            try {
+                softKeyboardController.addOnShowModeChangedListener { controller, mode ->
+                    if (isSynergyActive && mode != android.accessibilityservice.AccessibilityService.SHOW_MODE_HIDDEN) {
+                        mainHandler.post {
+                            try {
+                                controller.showMode = android.accessibilityservice.AccessibilityService.SHOW_MODE_HIDDEN
+                            } catch (_: Exception) {}
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
