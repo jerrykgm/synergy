@@ -33,16 +33,16 @@ class SynergyNetworkService(
                 val input = DataInputStream(s.getInputStream())
                 val output = DataOutputStream(s.getOutputStream())
 
-                // 1. Read Server Hello ("Syny" + major + minor)
-                val helloLen = input.readInt() // 4-byte length
-                if (helloLen < 8) {
+                // 1. Read Server Hello ("Synergy" + major + minor)
+                val helloLen = input.readInt() // 4-byte length (should be 11)
+                if (helloLen < 11) {
                     throw Exception("Invalid Hello packet length: $helloLen")
                 }
                 
-                val helloCode = ByteArray(4)
+                val helloCode = ByteArray(7)
                 input.readFully(helloCode)
                 val helloCodeStr = String(helloCode, StandardCharsets.US_ASCII)
-                onLog("Received hello command: $helloCodeStr")
+                onLog("Received protocol: $helloCodeStr")
 
                 val major = input.readShort()
                 val minor = input.readShort()
@@ -51,17 +51,19 @@ class SynergyNetworkService(
                 // 2. Send Client Hello
                 onLog("Sending Client Hello for '$clientName'...")
                 val nameBytes = clientName.toByteArray(StandardCharsets.US_ASCII)
-                val responseLen = 4 + 2 + 2 + nameBytes.size
+                // Client Hello payload: "Synergy" (7) + major (2) + minor (2) + nameLen (4) + nameBytes
+                val responseLen = 7 + 2 + 2 + 4 + nameBytes.size
                 
                 output.writeInt(responseLen)
-                output.writeBytes("Syny")
+                output.writeBytes("Synergy")
                 output.writeShort(major.toInt())
                 output.writeShort(minor.toInt())
+                output.writeInt(nameBytes.size)
                 output.write(nameBytes)
                 output.flush()
 
                 onStatusChange("Connected")
-                onLog("Client greeting sent successfully. Connection complete.")
+                onLog("Client greeting sent successfully. Handshake complete.")
 
                 // 3. Receive Packet loop
                 while (s.isConnected && !s.isClosed) {
