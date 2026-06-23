@@ -1168,6 +1168,8 @@ void MainWindow::enableServer(bool enable)
     m_pButtonToggleStart->setEnabled(true);
     m_pActionStartCore->setEnabled(true);
     m_CoreProcess.setMode(CoreProcess::Mode::Server);
+    m_NetworkDiscovery.stop();
+    m_NetworkDiscovery.startBroadcasting(m_AppConfig.screenName(), 24800);
 
     // The server can run without any clients configured, and this is actually
     // what you'll want to do the first time since you'll be prompted when an
@@ -1176,6 +1178,8 @@ void MainWindow::enableServer(bool enable)
       qDebug("auto-starting core server for first time");
       m_CoreProcess.start();
     }
+  } else {
+    m_NetworkDiscovery.stop();
   }
 }
 
@@ -1192,6 +1196,7 @@ void MainWindow::enableClient(bool enable)
     m_pActionStartCore->setEnabled(true);
     m_CoreProcess.setMode(CoreProcess::Mode::Client);
     // Start auto-discovery of Synergy servers on the local network
+    m_NetworkDiscovery.stop();
     m_NetworkDiscovery.startListening();
   } else {
     m_NetworkDiscovery.stop();

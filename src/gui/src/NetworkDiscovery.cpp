@@ -157,7 +157,6 @@ void NetworkDiscovery::sendBroadcast()
   const QList<QNetworkInterface> interfaces = QNetworkInterface::allInterfaces();
   for (const QNetworkInterface &iface : interfaces) {
     if (!(iface.flags() & QNetworkInterface::IsUp) ||
-        !(iface.flags() & QNetworkInterface::IsRunning) ||
         (iface.flags() & QNetworkInterface::IsLoopBack)) {
       continue;
     }
@@ -170,6 +169,8 @@ void NetworkDiscovery::sendBroadcast()
       const QHostAddress broadcast = entry.broadcast();
       if (!broadcast.isNull()) {
         m_pBroadcastSocket->writeDatagram(packet, broadcast, kDiscoveryPort);
+      } else {
+        m_pBroadcastSocket->writeDatagram(packet, QHostAddress::Broadcast, kDiscoveryPort);
       }
     }
   }
