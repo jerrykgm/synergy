@@ -284,7 +284,7 @@ class SynergyAccessibilityService : AccessibilityService() {
 
             when (keyId) {
                 0xFF08, 0xEF08, 0x0008      -> deleteLastChar()
-                0xFF0D, 0xFF8D, 0x000D, 0x000A -> triggerEnterKey()
+                0xFF0D, 0xFF8D, 0xEF0D, 0xEF8D, 0x000D, 0x000A -> triggerEnterKey()
                 0xFF09, 0x0009              -> insertChar('\t')
                 0xFF1B, 0x001B              -> performGlobalAction(GLOBAL_ACTION_BACK)
                 0xFFFF, 0xFF9F, 0xEF9F      -> deleteForwardChar()
@@ -315,8 +315,12 @@ class SynergyAccessibilityService : AccessibilityService() {
     private fun insertChar(ch: Char) = insertString(ch.toString())
 
     private fun getNodeText(node: AccessibilityNodeInfo): String {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && node.isShowingHintText) {
-            return ""
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val hint = node.hintText?.toString()
+            val text = node.text?.toString()
+            if (node.isShowingHintText || (hint != null && text == hint)) {
+                return ""
+            }
         }
         return node.text?.toString() ?: ""
     }
