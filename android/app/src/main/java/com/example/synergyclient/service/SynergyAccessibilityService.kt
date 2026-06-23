@@ -283,10 +283,10 @@ class SynergyAccessibilityService : AccessibilityService() {
             }
 
             when (keyId) {
-                0xFF08, 0xEF08              -> deleteLastChar()
-                0xFF0D, 0xFF8D              -> insertChar('\n')
-                0xFF09                      -> insertChar('\t')
-                0xFF1B                      -> performGlobalAction(GLOBAL_ACTION_BACK)
+                0xFF08, 0xEF08, 0x0008      -> deleteLastChar()
+                0xFF0D, 0xFF8D, 0x000D, 0x000A -> insertChar('\n')
+                0xFF09, 0x0009              -> insertChar('\t')
+                0xFF1B, 0x001B              -> performGlobalAction(GLOBAL_ACTION_BACK)
                 0xFFFF, 0xFF9F, 0xEF9F      -> deleteForwardChar()
                 in 0xFF50..0xFFFF           -> { /* navigation/function keys */ }
                 in 0x20..0x7E -> {
