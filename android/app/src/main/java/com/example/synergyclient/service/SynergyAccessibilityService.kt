@@ -50,7 +50,7 @@ class SynergyAccessibilityService : AccessibilityService() {
 
     // ── Text buffer: mirrors focused field content to avoid stale node reads
     private val textBuffer = StringBuilder()
-    private var textBufferInitialized = false
+    private var lastActiveNode: AccessibilityNodeInfo? = null
 
     private var lastClickTime = 0L
 
@@ -117,7 +117,8 @@ class SynergyAccessibilityService : AccessibilityService() {
                     synchronized(textBuffer) {
                         textBuffer.clear()
                         textBuffer.append(existing)
-                        textBufferInitialized = true
+                        lastActiveNode?.recycle()
+                        lastActiveNode = AccessibilityNodeInfo.obtain(src)
                     }
                     if (isSynergyActive) mainHandler.post { suppressKeyboard() }
                 }
@@ -130,6 +131,8 @@ class SynergyAccessibilityService : AccessibilityService() {
                     synchronized(textBuffer) {
                         textBuffer.clear()
                         textBuffer.append(existing)
+                        lastActiveNode?.recycle()
+                        lastActiveNode = AccessibilityNodeInfo.obtain(src)
                     }
                 }
                 src.recycle()
@@ -142,6 +145,8 @@ class SynergyAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         super.onDestroy()
         prefsListener?.let { sharedPrefs?.unregisterOnSharedPreferenceChangeListener(it) }
+        lastActiveNode?.recycle()
+        lastActiveNode = null
         if (::windowManager.isInitialized && ::overlayView.isInitialized) {
             mainHandler.post { try { windowManager.removeView(overlayView) } catch (_: Exception) {} }
         }
@@ -302,14 +307,20 @@ class SynergyAccessibilityService : AccessibilityService() {
 
     private fun insertChar(ch: Char) = insertString(ch.toString())
 
+    private fun updateBufferIfNodeChanged(currentNode: AccessibilityNodeInfo) {
+        val isSame = lastActiveNode?.let { it == currentNode } ?: false
+        if (!isSame) {
+            textBuffer.clear()
+            textBuffer.append(currentNode.text?.toString() ?: "")
+            lastActiveNode?.recycle()
+            lastActiveNode = AccessibilityNodeInfo.obtain(currentNode)
+        }
+    }
+
     private fun insertString(s: String) {
         val node = focusedEditable() ?: return
         val newText = synchronized(textBuffer) {
-            if (!textBufferInitialized) {
-                textBuffer.clear()
-                textBuffer.append(node.text?.toString() ?: "")
-                textBufferInitialized = true
-            }
+            updateBufferIfNodeChanged(node)
             textBuffer.append(s)
             textBuffer.toString()
         }
@@ -326,11 +337,7 @@ class SynergyAccessibilityService : AccessibilityService() {
     private fun deleteLastChar() {
         val node = focusedEditable() ?: return
         val newText = synchronized(textBuffer) {
-            if (!textBufferInitialized) {
-                textBuffer.clear()
-                textBuffer.append(node.text?.toString() ?: "")
-                textBufferInitialized = true
-            }
+            updateBufferIfNodeChanged(node)
             if (textBuffer.isNotEmpty()) textBuffer.deleteCharAt(textBuffer.length - 1)
             textBuffer.toString()
         }
