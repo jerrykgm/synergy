@@ -62,10 +62,18 @@ fun MainScreen(
     }
 
     val defaultClientName = remember {
-        val systemDeviceName = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
-            android.provider.Settings.Global.getString(context.contentResolver, android.provider.Settings.Global.DEVICE_NAME)
-        } else null
-        val bluetoothName = android.provider.Settings.Secure.getString(context.contentResolver, "bluetooth_name")
+        val systemDeviceName = try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
+                android.provider.Settings.Global.getString(context.contentResolver, android.provider.Settings.Global.DEVICE_NAME)
+            } else null
+        } catch (_: SecurityException) {
+            null
+        }
+        val bluetoothName = try {
+            android.provider.Settings.Secure.getString(context.contentResolver, "bluetooth_name")
+        } catch (_: SecurityException) {
+            null
+        }
         val rawName = systemDeviceName ?: bluetoothName ?: android.os.Build.MODEL
         rawName.replace("[^a-zA-Z0-9-_]".toRegex(), "")
     }
