@@ -111,6 +111,7 @@ This client has been optimized and verified to work across the following environ
 - **Android Client Devices:**
   - **Xiaomi Mi Pad 5** (MIUI Tablet)
   - **Samsung Galaxy Tab A9+** (One UI Tablet)
+    - *Note for Samsung Users:* Samsung's default keyboard may ignore accessibility commands to hide. For the best experience (where the onscreen keyboard stays perfectly hidden while typing from a PC), we highly recommend installing and setting **Gboard (Google Keyboard)** as your default keyboard.
 - **Host / Server Operating Systems:**
   - **macOS**
   - **Windows 11**
