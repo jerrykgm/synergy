@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -24,13 +26,27 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation3.runtime.NavKey
+import com.example.synergyclient.network.DiscoveredServer
 import com.example.synergyclient.network.SynergyNetworkService
+import com.example.synergyclient.network.SynergyServerDiscovery
 import com.example.synergyclient.service.SynergyAccessibilityService
-import com.example.synergyclient.theme.SynergyClientTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val MAX_LOGS = 200
+
+// ── Colour palette (single source of truth) ─────────────────────────────────
+private val Bg      = Color(0xFF0D0E14)
+private val Surface = Color(0xFF14151F)
+private val Card    = Color(0xFF1A1B27)
+private val Accent  = Color(0xFF6C63FF)
+private val AccentB = Color(0xFF8B85FF)
+private val Green   = Color(0xFF2ECC71)
+private val Amber   = Color(0xFFF39C12)
+private val Red     = Color(0xFFE74C3C)
+private val TextCol = Color(0xFFECEFF4)
+private val Muted   = Color(0xFF6B7280)
+private val Border  = Color(0xFF252636)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,14 +55,16 @@ fun MainScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val scope   = rememberCoroutineScope()
 
-    val prefs = remember { context.getSharedPreferences("synergy_prefs", android.content.Context.MODE_PRIVATE) }
+    val prefs = remember {
+        context.getSharedPreferences("synergy_prefs", android.content.Context.MODE_PRIVATE)
+    }
 
     // ── Persistent settings ────────────────────────────────────────────────
-    var serverIp     by remember { mutableStateOf(prefs.getString("server_ip", "10.40.194.37") ?: "10.40.194.37") }
-    var port         by remember { mutableStateOf(prefs.getString("port", "24800") ?: "24800") }
-    var clientName   by remember { mutableStateOf(prefs.getString("client_name", "AndroidClient") ?: "AndroidClient") }
+    var serverIp      by remember { mutableStateOf(prefs.getString("server_ip",    "10.40.194.37") ?: "10.40.194.37") }
+    var port          by remember { mutableStateOf(prefs.getString("port",         "24800")        ?: "24800") }
+    var clientName    by remember { mutableStateOf(prefs.getString("client_name",  "AndroidClient") ?: "AndroidClient") }
     var autoReconnect by remember { mutableStateOf(prefs.getBoolean("auto_reconnect", true)) }
     var loggingEnabled by remember { mutableStateOf(prefs.getBoolean("logging_enabled", true)) }
     var isMacServerMode by remember { mutableStateOf(prefs.getBoolean("mac_server_mode", false)) }
@@ -60,8 +78,14 @@ fun MainScreen(
     var networkService by remember { mutableStateOf<SynergyNetworkService?>(null) }
     var isAccessibilityEnabled by remember { mutableStateOf(false) }
 
-    // ── Log ring buffer (capped at MAX_LOGS) ──────────────────────────────
-    val logs = remember { mutableStateListOf<String>() }
+    // ── Discovery engine (singleton per composition) ───────────────────────
+    val discovery = remember { SynergyServerDiscovery() }
+    val discoveredServers by discovery.allServers.collectAsState()
+    var showScanPanel by remember { mutableStateOf(false) }
+    var isScanningAnim by remember { mutableStateOf(false) }
+
+    // ── Log ring buffer ────────────────────────────────────────────────────
+    val logs      = remember { mutableStateListOf<String>() }
     val listState = rememberLazyListState()
 
     fun addLog(msg: String) {
@@ -72,7 +96,35 @@ fun MainScreen(
         }
     }
 
-    // ── Poll accessibility service availability ────────────────────────────
+    // ── Start discovery when composition enters, stop when it leaves ───────
+    DisposableEffect(Unit) {
+        discovery.start()
+        onDispose {
+            discovery.stop()
+            networkService?.stop()
+        }
+    }
+
+    // ── React to new servers found by discovery ────────────────────────────
+    LaunchedEffect(Unit) {
+        discovery.serverFound.collect { server ->
+            addLog("🔍 Found: ${server.displayLabel}:${server.port}")
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        discovery.serverLost.collect { ip ->
+            addLog("📡 Lost: $ip")
+        }
+    }
+
+    // ── Start/stop scanning animation ─────────────────────────────────────
+    LaunchedEffect(showScanPanel) {
+        if (showScanPanel) { isScanningAnim = true }
+        else               { isScanningAnim = false }
+    }
+
+    // ── Poll accessibility ─────────────────────────────────────────────────
     LaunchedEffect(Unit) {
         while (true) {
             isAccessibilityEnabled = SynergyAccessibilityService.instance != null
@@ -80,55 +132,46 @@ fun MainScreen(
         }
     }
 
-    // ── Auto-scroll log to bottom ──────────────────────────────────────────
+    // ── Auto-scroll log ────────────────────────────────────────────────────
     LaunchedEffect(logs.size) {
         if (logs.isNotEmpty()) listState.animateScrollToItem(logs.size - 1)
     }
 
-    // ── Cleanup on dispose ─────────────────────────────────────────────────
-    DisposableEffect(Unit) {
-        onDispose { networkService?.stop() }
-    }
-
-    // Save settings helper
+    // ── Settings persist helper ────────────────────────────────────────────
     fun saveSettings() {
         prefs.edit().apply {
-            putString("server_ip", serverIp)
-            putString("port", port)
-            putString("client_name", clientName)
-            putBoolean("auto_reconnect", autoReconnect)
-            putBoolean("logging_enabled", loggingEnabled)
-            putBoolean("mac_server_mode", isMacServerMode)
+            putString("server_ip",      serverIp)
+            putString("port",           port)
+            putString("client_name",    clientName)
+            putBoolean("auto_reconnect",    autoReconnect)
+            putBoolean("logging_enabled",   loggingEnabled)
+            putBoolean("mac_server_mode",   isMacServerMode)
             apply()
         }
     }
 
-
-    // ── Connect / Disconnect logic ─────────────────────────────────────────
+    // ── Connect / Disconnect ───────────────────────────────────────────────
     fun connect() {
         saveSettings()
-        // Always stop any existing service first to prevent duplicate connections
         networkService?.stop()
         networkService = null
         connectionStatus = "Connecting..."
 
         val portNum = port.toIntOrNull() ?: 24800
         val svc = SynergyNetworkService(
-            host = serverIp,
-            port = portNum,
-            clientName = clientName,
-            context = context,
+            host          = serverIp,
+            port          = portNum,
+            clientName    = clientName,
+            context       = context,
             loggingEnabled = loggingEnabled,
-            onLog = { msg -> addLog(msg) },
+            onLog         = { msg -> addLog(msg) },
             onStatusChange = { status ->
                 connectionStatus = status
-                // Auto-reconnect only if service was not manually stopped (networkService != null)
                 if (status == "Disconnected" && autoReconnect && networkService != null) {
                     scope.launch {
                         delay(3000)
-                        // Re-check: user might have disconnected manually during the delay
                         if (connectionStatus == "Disconnected" && networkService != null) {
-                            addLog("Auto-reconnecting...")
+                            addLog("⟳ Auto-reconnecting...")
                             connect()
                         }
                     }
@@ -144,327 +187,512 @@ fun MainScreen(
         networkService = null
     }
 
-    // ── mDNS Auto Discovery ────────────────────────────────────────────────
-    LaunchedEffect(Unit) {
-        val discovery = com.example.synergyclient.network.SynergyServerDiscovery(context) { host, p ->
-            scope.launch {
-                addLog("Auto-discovered server at $host:$p")
-                serverIp = host
-                port = p.toString()
-                saveSettings()
-                
-                // Automatically connect if not already connected/connecting
-                if (connectionStatus == "Disconnected") {
-                    addLog("Auto-connecting to discovered server...")
-                    connect()
-                }
-            }
-        }
-        discovery.start()
-        try {
-            kotlinx.coroutines.awaitCancellation()
-        } finally {
-            discovery.stop()
-        }
+    fun selectServer(server: DiscoveredServer) {
+        serverIp = server.ip
+        port     = server.port.toString()
+        showScanPanel = false
+        addLog("✓ Selected ${server.displayLabel}")
+        if (!isConnected && !isConnecting) connect()
     }
 
-    // ── Design tokens ──────────────────────────────────────────────────────
-    val bg      = Color(0xFF0D0E14)
-    val surface = Color(0xFF14151F)
-    val card    = Color(0xFF1A1B27)
-    val accent  = Color(0xFF6C63FF)
-    val accentB = Color(0xFF8B85FF)
-    val green   = Color(0xFF2ECC71)
-    val amber   = Color(0xFFF39C12)
-    val red     = Color(0xFFE74C3C)
-    val text    = Color(0xFFECEFF4)
-    val muted   = Color(0xFF6B7280)
-    val border  = Color(0xFF252636)
-
-    val statusColor = when (connectionStatus) {
-        "Connected"    -> green
-        "Connecting..." -> amber
-        else            -> red
-    }
-
+    // ── Root layout ────────────────────────────────────────────────────────
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(bg)
+            .background(Bg)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
 
         // ── Header ─────────────────────────────────────────────────────────
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "SYNERGY",
-                    fontSize = 22.sp, fontWeight = FontWeight.Bold,
-                    color = text, letterSpacing = 3.sp
-                )
-                Text(
-                    "Android Client  •  v1.0",
-                    fontSize = 12.sp, color = muted
-                )
-            }
-            // Live status pill
-            AnimatedContent(
-                targetState = connectionStatus,
-                transitionSpec = { fadeIn() togetherWith fadeOut() },
-                label = "status"
-            ) { status ->
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = statusColor.copy(alpha = 0.15f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, statusColor.copy(alpha = 0.4f))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier.size(7.dp).clip(CircleShape)
-                                .background(statusColor)
-                        )
-                        Text(status, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = statusColor)
-                    }
-                }
-            }
-        }
+        AppHeader(connectionStatus = connectionStatus)
 
         // ── Accessibility warning ──────────────────────────────────────────
-        AnimatedVisibility(visible = !isAccessibilityEnabled) {
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = Color(0xFF2A1F1F),
-                border = androidx.compose.foundation.BorderStroke(1.dp, red.copy(alpha = 0.4f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Accessibility Service Required",
-                            fontWeight = FontWeight.Bold, color = red, fontSize = 13.sp)
-                        Text("Needed for cursor, keyboard & clipboard.",
-                            fontSize = 11.sp, color = red.copy(alpha = 0.7f))
-                    }
-                    Button(
-                        onClick = {
-                            context.startActivity(
-                                android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = red),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Text("ENABLE", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
+        AnimatedVisibility(
+            visible = !isAccessibilityEnabled,
+            enter   = slideInVertically() + fadeIn(),
+            exit    = slideOutVertically() + fadeOut()
+        ) {
+            AccessibilityWarningBanner(context = context)
         }
+
+        // ── Network Scan Panel ─────────────────────────────────────────────
+        ScanPanel(
+            discovery        = discovery,
+            discoveredServers = discoveredServers,
+            showScanPanel    = showScanPanel,
+            isScanningAnim   = isScanningAnim,
+            onToggle         = { showScanPanel = !showScanPanel },
+            onSelectServer   = ::selectServer,
+            onRescan         = {
+                addLog("🔄 Rescanning network...")
+                discovery.stop()
+                discovery.start()
+            }
+        )
 
         // ── Connection settings ────────────────────────────────────────────
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = card,
-            border = androidx.compose.foundation.BorderStroke(1.dp, border),
-            modifier = Modifier.fillMaxWidth()
+        ConnectionCard(
+            serverIp        = serverIp,
+            port            = port,
+            clientName      = clientName,
+            autoReconnect   = autoReconnect,
+            loggingEnabled  = loggingEnabled,
+            isMacServerMode = isMacServerMode,
+            isConnected     = isConnected,
+            isConnecting    = isConnecting,
+            onServerIpChange     = { serverIp = it },
+            onPortChange         = { port = it },
+            onClientNameChange   = { clientName = it },
+            onAutoReconnectChange = { autoReconnect = it },
+            onLoggingChange      = { loggingEnabled = it },
+            onMacModeChange      = { isMacServerMode = it },
+            onConnectClick       = { if (isConnected || isConnecting) disconnect() else connect() }
+        )
+
+        // ── Activity log ───────────────────────────────────────────────────
+        ActivityLog(
+            logs      = logs,
+            listState = listState,
+            onClear   = { logs.clear() }
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-components
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun AppHeader(connectionStatus: String) {
+    val statusColor = when (connectionStatus) {
+        "Connected"    -> Green
+        "Connecting..." -> Amber
+        else           -> Red
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("SYNERGY", fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                color = TextCol, letterSpacing = 3.sp)
+            Text("Android Client  •  v1.0", fontSize = 12.sp, color = Muted)
+        }
+        AnimatedContent(
+            targetState   = connectionStatus,
+            transitionSpec = { fadeIn() togetherWith fadeOut() },
+            label         = "status"
+        ) { status ->
+            Surface(
+                shape  = RoundedCornerShape(20.dp),
+                color  = statusColor.copy(alpha = 0.15f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, statusColor.copy(alpha = 0.4f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(statusColor))
+                    Text(status, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = statusColor)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccessibilityWarningBanner(context: android.content.Context) {
+    Surface(
+        shape  = RoundedCornerShape(10.dp),
+        color  = Color(0xFF2A1F1F),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Red.copy(alpha = 0.4f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("CONNECTION", fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                    color = muted, letterSpacing = 1.5.sp)
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Accessibility Service Required",
+                    fontWeight = FontWeight.Bold, color = Red, fontSize = 13.sp)
+                Text("Needed for cursor, keyboard & clipboard.",
+                    fontSize = 11.sp, color = Red.copy(alpha = 0.7f))
+            }
+            Button(
+                onClick = {
+                    context.startActivity(
+                        android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    )
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Red),
+                shape  = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Text("ENABLE", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
 
-                OutlinedTextField(
-                    value = serverIp, onValueChange = { serverIp = it },
-                    label = { Text("Server IP", color = muted, fontSize = 13.sp) },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = accent, unfocusedBorderColor = border,
-                        focusedTextColor = text, unfocusedTextColor = text,
-                        focusedLabelColor = accent, unfocusedLabelColor = muted
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isConnected && !isConnecting,
-                    singleLine = true
+@Composable
+private fun ScanPanel(
+    discovery:         SynergyServerDiscovery,
+    discoveredServers: List<DiscoveredServer>,
+    showScanPanel:     Boolean,
+    isScanningAnim:    Boolean,
+    onToggle:          () -> Unit,
+    onSelectServer:    (DiscoveredServer) -> Unit,
+    onRescan:          () -> Unit,
+) {
+    // Spinning animation for scan icon
+    val infiniteTransition = rememberInfiniteTransition(label = "spin")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue   = 0f,
+        targetValue    = 360f,
+        animationSpec  = infiniteRepeatable(tween(1400, easing = LinearEasing)),
+        label          = "spin"
+    )
+
+    Surface(
+        shape    = RoundedCornerShape(12.dp),
+        color    = Card,
+        border   = androidx.compose.foundation.BorderStroke(
+            width = 1.dp,
+            brush = if (discoveredServers.isNotEmpty())
+                Brush.horizontalGradient(listOf(Accent, AccentB))
+            else
+                Brush.horizontalGradient(listOf(Border, Border))
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+
+            // ── Header row ─────────────────────────────────────────────────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggle() },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Spinning radar icon (text emoji fallback)
+                Text(
+                    text     = "📡",
+                    fontSize = 18.sp,
+                    modifier = if (discoveredServers.isEmpty())
+                        Modifier.rotate(rotation)
+                    else
+                        Modifier
                 )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = port, onValueChange = { port = it },
-                        label = { Text("Port", color = muted, fontSize = 13.sp) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = accent, unfocusedBorderColor = border,
-                            focusedTextColor = text, unfocusedTextColor = text
-                        ),
-                        modifier = Modifier.weight(1f),
-                        enabled = !isConnected && !isConnecting,
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = clientName, onValueChange = { clientName = it },
-                        label = { Text("Screen Name", color = muted, fontSize = 13.sp) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = accent, unfocusedBorderColor = border,
-                            focusedTextColor = text, unfocusedTextColor = text
-                        ),
-                        modifier = Modifier.weight(2f),
-                        enabled = !isConnected && !isConnecting,
-                        singleLine = true
-                    )
-                }
-                // Auto-reconnect toggle
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text("Auto-reconnect", fontSize = 13.sp, color = text)
-                        Text("Reconnect after 3s if dropped", fontSize = 11.sp, color = muted)
-                    }
-                    Switch(
-                        checked = autoReconnect,
-                        onCheckedChange = { autoReconnect = it },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = accent
-                        )
-                    )
-                }
-
-                // Logging toggle
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text("Connection Logs", fontSize = 13.sp, color = text)
-                        Text("Disable logs for faster communication", fontSize = 11.sp, color = muted)
-                    }
-                    Switch(
-                        checked = loggingEnabled,
-                        onCheckedChange = { loggingEnabled = it },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = accent
-                        )
-                    )
-                }
-
-                // Mac Server Mode toggle
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text("Mac Server Mode", fontSize = 13.sp, color = text)
-                        Text("Maps Cmd+C/V to Ctrl+C/V", fontSize = 11.sp, color = muted)
-                    }
-                    Switch(
-                        checked = isMacServerMode,
-                        onCheckedChange = { isMacServerMode = it },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = accent
-                        )
-                    )
-                }
-
-                // Connect button
-                val btnGradient = if (isConnected)
-                    Brush.horizontalGradient(listOf(red, Color(0xFFC0392B)))
-                else
-                    Brush.horizontalGradient(listOf(accent, accentB))
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(btnGradient),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Button(
-                        onClick = {
-                            if (isConnected || isConnecting) disconnect() else connect()
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Network Scan", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextCol)
+                    Text(
+                        text = when {
+                            discoveredServers.isEmpty() -> "Scanning for Synergy servers..."
+                            discoveredServers.size == 1 -> "1 server found"
+                            else                        -> "${discoveredServers.size} servers found"
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
-                        elevation = ButtonDefaults.buttonElevation(0.dp),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxSize()
+                        fontSize = 11.sp,
+                        color    = if (discoveredServers.isEmpty()) Muted else Green
+                    )
+                }
+                // Found count badge
+                if (discoveredServers.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(Accent),
+                        contentAlignment = Alignment.Center
                     ) {
-                        if (isConnecting) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = Color.White, strokeWidth = 2.dp
-                            )
-                            Spacer(Modifier.width(8.dp))
-                        }
                         Text(
-                            text = when {
-                                isConnecting -> "Connecting..."
-                                isConnected  -> "Disconnect"
-                                else         -> "Connect"
-                            },
-                            fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White
+                            text     = discoveredServers.size.toString(),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color    = Color.White
                         )
+                    }
+                }
+                // Expand chevron
+                Text(
+                    text     = if (showScanPanel) "▲" else "▼",
+                    fontSize = 11.sp,
+                    color    = Muted
+                )
+            }
+
+            // ── Expandable server list ─────────────────────────────────────
+            AnimatedVisibility(
+                visible      = showScanPanel,
+                enter        = expandVertically() + fadeIn(),
+                exit         = shrinkVertically() + fadeOut()
+            ) {
+                Column(modifier = Modifier.padding(top = 10.dp)) {
+                    HorizontalDivider(color = Border, thickness = 1.dp)
+                    Spacer(Modifier.height(8.dp))
+
+                    if (discoveredServers.isEmpty()) {
+                        // Empty state with scanning indicator
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier    = Modifier.size(14.dp),
+                                color       = Accent,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text("Waiting for broadcast packets on UDP:24802",
+                                fontSize = 11.sp, color = Muted)
+                        }
+                    } else {
+                        discoveredServers.forEach { server ->
+                            ServerListItem(server = server, onClick = { onSelectServer(server) })
+                            Spacer(Modifier.height(4.dp))
+                        }
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+
+                    // Rescan button
+                    OutlinedButton(
+                        onClick = onRescan,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape    = RoundedCornerShape(8.dp),
+                        border   = androidx.compose.foundation.BorderStroke(1.dp, Accent.copy(alpha = 0.5f)),
+                        colors   = ButtonDefaults.outlinedButtonColors(contentColor = Accent)
+                    ) {
+                        Text("🔄  Rescan Network", fontSize = 12.sp)
                     }
                 }
             }
         }
+    }
+}
 
-        // ── Activity log ──────────────────────────────────────────────────
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = Color(0xFF0A0B10),
-            border = androidx.compose.foundation.BorderStroke(1.dp, border),
-            modifier = Modifier.fillMaxWidth().weight(1f)
+@Composable
+private fun ServerListItem(server: DiscoveredServer, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Bg)
+            .border(1.dp, Border, RoundedCornerShape(8.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Green))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(server.hostname, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                color = TextCol, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("${server.ip}  •  port ${server.port}", fontSize = 11.sp, color = Muted)
+        }
+        Text("Connect →", fontSize = 11.sp, color = Accent)
+    }
+}
+
+@Composable
+private fun ConnectionCard(
+    serverIp:        String,
+    port:            String,
+    clientName:      String,
+    autoReconnect:   Boolean,
+    loggingEnabled:  Boolean,
+    isMacServerMode: Boolean,
+    isConnected:     Boolean,
+    isConnecting:    Boolean,
+    onServerIpChange:      (String)  -> Unit,
+    onPortChange:          (String)  -> Unit,
+    onClientNameChange:    (String)  -> Unit,
+    onAutoReconnectChange: (Boolean) -> Unit,
+    onLoggingChange:       (Boolean) -> Unit,
+    onMacModeChange:       (Boolean) -> Unit,
+    onConnectClick:        () -> Unit,
+) {
+    Surface(
+        shape    = RoundedCornerShape(12.dp),
+        color    = Card,
+        border   = androidx.compose.foundation.BorderStroke(1.dp, Border),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            Text("CONNECTION", fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                color = Muted, letterSpacing = 1.5.sp)
+
+            OutlinedTextField(
+                value    = serverIp,
+                onValueChange = onServerIpChange,
+                label    = { Text("Server IP", color = Muted, fontSize = 13.sp) },
+                colors   = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor    = Accent, unfocusedBorderColor = Border,
+                    focusedTextColor      = TextCol, unfocusedTextColor = TextCol,
+                    focusedLabelColor     = Accent,  unfocusedLabelColor = Muted
+                ),
+                modifier  = Modifier.fillMaxWidth(),
+                enabled   = !isConnected && !isConnecting,
+                singleLine = true
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value    = port,
+                    onValueChange = onPortChange,
+                    label    = { Text("Port", color = Muted, fontSize = 13.sp) },
+                    colors   = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Accent, unfocusedBorderColor = Border,
+                        focusedTextColor = TextCol, unfocusedTextColor = TextCol
+                    ),
+                    modifier  = Modifier.weight(1f),
+                    enabled   = !isConnected && !isConnecting,
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value    = clientName,
+                    onValueChange = onClientNameChange,
+                    label    = { Text("Screen Name", color = Muted, fontSize = 13.sp) },
+                    colors   = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Accent, unfocusedBorderColor = Border,
+                        focusedTextColor = TextCol, unfocusedTextColor = TextCol
+                    ),
+                    modifier  = Modifier.weight(2f),
+                    enabled   = !isConnected && !isConnecting,
+                    singleLine = true
+                )
+            }
+
+            ToggleRow("Auto-reconnect",  "Reconnect after 3s if dropped",       autoReconnect,   onAutoReconnectChange)
+            ToggleRow("Connection Logs", "Disable logs for faster communication", loggingEnabled,  onLoggingChange)
+            ToggleRow("Mac Server Mode", "Maps ⌘+C/V → Ctrl+C/V on this device", isMacServerMode, onMacModeChange,
+                highlightColor = Accent)
+
+            val btnGradient = if (isConnected)
+                Brush.horizontalGradient(listOf(Red, Color(0xFFC0392B)))
+            else
+                Brush.horizontalGradient(listOf(Accent, AccentB))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(btnGradient),
+                contentAlignment = Alignment.Center
+            ) {
+                Button(
+                    onClick  = onConnectClick,
+                    colors   = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                    elevation = ButtonDefaults.buttonElevation(0.dp),
+                    shape    = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    Text("ACTIVITY LOG", fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                        color = muted, letterSpacing = 1.5.sp)
-                    TextButton(
-                        onClick = { logs.clear() },
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text("Clear", fontSize = 10.sp, color = muted)
+                    if (isConnecting) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp),
+                            color = Color.White, strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
                     }
+                    Text(
+                        text = when {
+                            isConnecting -> "Connecting..."
+                            isConnected  -> "Disconnect"
+                            else         -> "Connect"
+                        },
+                        fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White
+                    )
                 }
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToggleRow(
+    title:         String,
+    subtitle:      String,
+    checked:       Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    highlightColor: Color = Accent,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(title,    fontSize = 13.sp, color = TextCol)
+            Text(subtitle, fontSize = 11.sp, color = Muted)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor  = Color.White,
+                checkedTrackColor  = highlightColor
+            )
+        )
+    }
+}
+
+@Composable
+private fun ActivityLog(
+    logs:      List<String>,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    onClear:   () -> Unit,
+) {
+    val green = Green; val red = Red; val accentB = AccentB; val text = TextCol
+
+    Surface(
+        shape    = RoundedCornerShape(12.dp),
+        color    = Color(0xFF0A0B10),
+        border   = androidx.compose.foundation.BorderStroke(1.dp, Border),
+        modifier = Modifier.fillMaxWidth().weight(1f)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("ACTIVITY LOG", fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                    color = Muted, letterSpacing = 1.5.sp)
+                TextButton(
+                    onClick = onClear,
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                 ) {
-                    items(logs) { line ->
-                        Text(
-                            text = line,
-                            color = when {
-                                line.contains("Connected") || line.contains("DSOP") -> green
-                                line.contains("Error") || line.contains("Disconnected") -> red.copy(alpha = 0.8f)
-                                line.startsWith("→") -> accentB
-                                else -> text.copy(alpha = 0.7f)
-                            },
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                    Text("Clear", fontSize = 10.sp, color = Muted)
+                }
+            }
+            LazyColumn(
+                state   = listState,
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                items(logs) { line ->
+                    Text(
+                        text   = line,
+                        color  = when {
+                            line.contains("Connected") || line.contains("DSOP") -> green
+                            line.contains("Error") || line.contains("Disconnected") -> red.copy(alpha = 0.8f)
+                            line.startsWith("→") || line.startsWith("✓") -> accentB
+                            line.startsWith("🔍") || line.startsWith("📡") -> Amber
+                            else -> text.copy(alpha = 0.7f)
+                        },
+                        fontFamily = FontFamily.Monospace,
+                        fontSize   = 11.sp,
+                        maxLines   = 1,
+                        overflow   = TextOverflow.Ellipsis
+                    )
                 }
             }
         }
