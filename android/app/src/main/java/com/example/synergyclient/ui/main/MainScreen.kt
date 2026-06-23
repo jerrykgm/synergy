@@ -48,6 +48,7 @@ fun MainScreen(
     var port         by remember { mutableStateOf(prefs.getString("port", "24800") ?: "24800") }
     var clientName   by remember { mutableStateOf(prefs.getString("client_name", "AndroidClient") ?: "AndroidClient") }
     var autoReconnect by remember { mutableStateOf(prefs.getBoolean("auto_reconnect", true)) }
+    var loggingEnabled by remember { mutableStateOf(prefs.getBoolean("logging_enabled", true)) }
 
     // ── Connection state ───────────────────────────────────────────────────
     var connectionStatus by remember { mutableStateOf("Disconnected") }
@@ -95,27 +96,11 @@ fun MainScreen(
             putString("port", port)
             putString("client_name", clientName)
             putBoolean("auto_reconnect", autoReconnect)
+            putBoolean("logging_enabled", loggingEnabled)
             apply()
         }
     }
 
-    // ── mDNS Auto Discovery ────────────────────────────────────────────────
-    LaunchedEffect(Unit) {
-        val discovery = com.example.synergyclient.network.SynergyServerDiscovery(context) { host, p ->
-            scope.launch {
-                addLog("Auto-discovered server at $host:$p")
-                serverIp = host
-                port = p.toString()
-                saveSettings()
-            }
-        }
-        discovery.start()
-        try {
-            kotlinx.coroutines.awaitCancellation()
-        } finally {
-            discovery.stop()
-        }
-    }
 
     // ── Connect / Disconnect logic ─────────────────────────────────────────
     fun connect() {
@@ -131,6 +116,7 @@ fun MainScreen(
             port = portNum,
             clientName = clientName,
             context = context,
+            loggingEnabled = loggingEnabled,
             onLog = { msg -> addLog(msg) },
             onStatusChange = { status ->
                 connectionStatus = status
@@ -154,6 +140,30 @@ fun MainScreen(
     fun disconnect() {
         networkService?.stop()
         networkService = null
+    }
+
+    // ── mDNS Auto Discovery ────────────────────────────────────────────────
+    LaunchedEffect(Unit) {
+        val discovery = com.example.synergyclient.network.SynergyServerDiscovery(context) { host, p ->
+            scope.launch {
+                addLog("Auto-discovered server at $host:$p")
+                serverIp = host
+                port = p.toString()
+                saveSettings()
+                
+                // Automatically connect if not already connected/connecting
+                if (connectionStatus == "Disconnected") {
+                    addLog("Auto-connecting to discovered server...")
+                    connect()
+                }
+            }
+        }
+        discovery.start()
+        try {
+            kotlinx.coroutines.awaitCancellation()
+        } finally {
+            discovery.stop()
+        }
     }
 
     // ── Design tokens ──────────────────────────────────────────────────────
@@ -308,7 +318,6 @@ fun MainScreen(
                         singleLine = true
                     )
                 }
-
                 // Auto-reconnect toggle
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -322,6 +331,26 @@ fun MainScreen(
                     Switch(
                         checked = autoReconnect,
                         onCheckedChange = { autoReconnect = it },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = accent
+                        )
+                    )
+                }
+
+                // Logging toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text("Connection Logs", fontSize = 13.sp, color = text)
+                        Text("Disable logs for faster communication", fontSize = 11.sp, color = muted)
+                    }
+                    Switch(
+                        checked = loggingEnabled,
+                        onCheckedChange = { loggingEnabled = it },
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Color.White,
                             checkedTrackColor = accent

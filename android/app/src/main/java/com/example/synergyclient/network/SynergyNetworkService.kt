@@ -18,6 +18,7 @@ class SynergyNetworkService(
     private val port: Int,
     private val clientName: String,
     private val context: Context,
+    private val loggingEnabled: Boolean,
     private val onLog: (String) -> Unit,
     private val onStatusChange: (String) -> Unit
 ) {
@@ -32,6 +33,7 @@ class SynergyNetworkService(
     private var logFlusher: Job? = null
 
     private fun log(msg: String) {
+        if (!loggingEnabled) return
         Log.i("SynergyApp", msg)
         synchronized(logBuffer) { logBuffer.addLast(msg) }
     }
