@@ -41,6 +41,7 @@
 #include "net/SecureSocket.h"
 #include "net/TCPSocket.h"
 
+#include "deskflow/key_types.h"
 #include <algorithm>
 #include <climits>
 #include <cstdlib>
@@ -285,16 +286,61 @@ void Client::setClipboardDirty(ClipboardID, bool)
 
 void Client::keyDown(KeyID id, KeyModifierMask mask, KeyButton button, const String &lang)
 {
+  if (m_args.m_macServerMode) {
+    if (id == kKeyMeta_L || id == kKeySuper_L) {
+      id = kKeyControl_L;
+    } else if (id == kKeyMeta_R || id == kKeySuper_R) {
+      id = kKeyControl_R;
+    }
+    if (mask & KeyModifierMeta) {
+      mask &= ~KeyModifierMeta;
+      mask |= KeyModifierControl;
+    }
+    if (mask & KeyModifierSuper) {
+      mask &= ~KeyModifierSuper;
+      mask |= KeyModifierControl;
+    }
+  }
   m_screen->keyDown(id, mask, button, lang);
 }
 
 void Client::keyRepeat(KeyID id, KeyModifierMask mask, SInt32 count, KeyButton button, const String &lang)
 {
+  if (m_args.m_macServerMode) {
+    if (id == kKeyMeta_L || id == kKeySuper_L) {
+      id = kKeyControl_L;
+    } else if (id == kKeyMeta_R || id == kKeySuper_R) {
+      id = kKeyControl_R;
+    }
+    if (mask & KeyModifierMeta) {
+      mask &= ~KeyModifierMeta;
+      mask |= KeyModifierControl;
+    }
+    if (mask & KeyModifierSuper) {
+      mask &= ~KeyModifierSuper;
+      mask |= KeyModifierControl;
+    }
+  }
   m_screen->keyRepeat(id, mask, count, button, lang);
 }
 
 void Client::keyUp(KeyID id, KeyModifierMask mask, KeyButton button)
 {
+  if (m_args.m_macServerMode) {
+    if (id == kKeyMeta_L || id == kKeySuper_L) {
+      id = kKeyControl_L;
+    } else if (id == kKeyMeta_R || id == kKeySuper_R) {
+      id = kKeyControl_R;
+    }
+    if (mask & KeyModifierMeta) {
+      mask &= ~KeyModifierMeta;
+      mask |= KeyModifierControl;
+    }
+    if (mask & KeyModifierSuper) {
+      mask &= ~KeyModifierSuper;
+      mask |= KeyModifierControl;
+    }
+  }
   m_screen->keyUp(id, mask, button);
 }
 

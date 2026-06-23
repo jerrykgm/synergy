@@ -56,7 +56,13 @@ public:
    * @brief m_serverAddress stores deskflow server address
    */
   std::string m_serverAddress;
+
+  /**
+   * @brief m_macServerMode - maps Command key modifiers to Control on client side
+   */
+  bool m_macServerMode = false;
 };
 } // namespace deskflow
 
 #endif // DESKFLOW_CORE_CLIENTARGS_H
+

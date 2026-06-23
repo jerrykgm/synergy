@@ -140,3 +140,25 @@ TEST(ClientArgsParsingTests, parseClientArgs_unrecognizedArg_returnFalse)
 
   EXPECT_FALSE(result);
 }
+
+TEST(ClientArgsParsingTests, parseClientArgs_setMacServerMode)
+{
+  NiceMock<MockArgParser> argParser;
+  deskflow::ClientArgs clientArgs;
+  const int argc = 2;
+  std::array<const char *, argc> kCmd = {"stub", "--mac-server-mode"};
+
+  argParser.parseClientArgs(clientArgs, argc, kCmd.data());
+  EXPECT_TRUE(clientArgs.m_macServerMode);
+}
+
+TEST(ClientArgsParsingTests, parseClientArgs_setServerOsMode)
+{
+  NiceMock<MockArgParser> argParser;
+  deskflow::ClientArgs clientArgs;
+  const int argc = 2;
+  std::array<const char *, argc> kCmd = {"stub", "--server-os-mode"};
+
+  argParser.parseClientArgs(clientArgs, argc, kCmd.data());
+  EXPECT_TRUE(clientArgs.m_macServerMode);
+}
