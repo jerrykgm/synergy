@@ -96,6 +96,7 @@ const char *const AppConfig::m_SettingsName[] = {
     "enableDragAndDrop",
     "enableLibei",
     "updateTrack",
+    "macServerMode",
 };
 
 AppConfig::AppConfig(deskflow::gui::ISettings &settings, std::shared_ptr<Deps> deps)
@@ -148,6 +149,7 @@ void AppConfig::recall()
   m_UpdateTrack = get(kUpdateTrack, m_UpdateTrack).toString();
   m_EnableDragAndDrop = get(kEnableDragAndDrop, m_EnableDragAndDrop).toBool();
   m_EnableLibei = get(kEnableLibei, m_EnableLibei).toBool();
+  m_MacServerMode = get(kMacServerMode, m_MacServerMode).toBool();
 
   auto &locked = m_Settings.getLockedSettings();
   if (locked.contains(settingName(kTlsEnabled))) {
@@ -218,9 +220,9 @@ void AppConfig::commit()
     set(kMainWindowPosition, m_MainWindowPosition);
     set(kShowDevThanks, m_ShowDevThanks);
     set(kShowCloseReminder, m_ShowCloseReminder);
-    set(kEnableDragAndDrop, m_EnableDragAndDrop);
     set(kEnableLibei, m_EnableLibei);
     set(kUpdateTrack, m_UpdateTrack);
+    set(kMacServerMode, m_MacServerMode);
   }
 
   if (m_TlsChanged) {
@@ -397,6 +399,11 @@ bool AppConfig::invertScrollDirection() const
 bool AppConfig::languageSync() const
 {
   return m_LanguageSync;
+}
+
+bool AppConfig::macServerMode() const
+{
+  return m_MacServerMode;
 }
 
 bool AppConfig::preventSleep() const
@@ -635,6 +642,11 @@ void AppConfig::setInvertScrollDirection(bool newValue)
 void AppConfig::setLanguageSync(bool newValue)
 {
   m_LanguageSync = newValue;
+}
+
+void AppConfig::setMacServerMode(bool newValue)
+{
+  m_MacServerMode = newValue;
 }
 
 void AppConfig::setPreventSleep(bool newValue)

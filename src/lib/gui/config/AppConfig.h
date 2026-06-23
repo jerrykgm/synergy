@@ -123,6 +123,7 @@ private:
     kEnableDragAndDrop = 44,
     kEnableLibei = 45,
     kUpdateTrack = 46,
+    kMacServerMode = 47,
   };
 
 public:
@@ -179,6 +180,7 @@ public:
   bool enableDragAndDrop() const override;
   bool enableLibei() const override;
   QString updateTrack() const override;
+  bool macServerMode() const override;
 
   //
   // Getters (new methods)
@@ -219,6 +221,7 @@ public:
   void setInvertConnection(bool value) override;
   void setEnableDragAndDrop(bool value) override;
   void setEnableLibei(bool value) override;
+  void setMacServerMode(bool value) override;
 
   //
   // Setters (new methods)
@@ -317,6 +320,7 @@ private:
   QString m_UpdateTrack = "stable";
   bool m_EnableDragAndDrop = false;
   bool m_EnableLibei = deskflow::gui::kDefaultEnableLibei;
+  bool m_MacServerMode = false;
 
   /**
    * @brief Flag is set when any TLS is setting is changed, and is reset

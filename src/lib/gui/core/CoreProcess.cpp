@@ -630,6 +630,10 @@ bool CoreProcess::addClientArgs(QStringList &args, QString &app)
     args << "--invert-scroll";
   }
 
+  if (m_appConfig.macServerMode()) {
+    args << "--mac-server-mode";
+  }
+
   if (m_appConfig.invertConnection()) {
     qDebug("inverting client connection");
     args << "--host";

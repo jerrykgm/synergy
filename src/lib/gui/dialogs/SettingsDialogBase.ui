@@ -150,6 +150,13 @@
             </property>
            </widget>
           </item>
+          <item>
+           <widget class="QCheckBox" name="m_pCheckBoxMacServerMode">
+            <property name="text">
+             <string>Enable Mac Server Mode (maps Cmd modifier to Ctrl on client)</string>
+            </property>
+           </widget>
+          </item>
          </layout>
         </widget>
        </item>

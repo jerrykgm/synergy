@@ -77,6 +77,7 @@ public:
   MOCK_METHOD(bool, enableDragAndDrop, (), (const, override));
   MOCK_METHOD(bool, enableLibei, (), (const, override));
   MOCK_METHOD(QString, updateTrack, (), (const, override));
+  MOCK_METHOD(bool, macServerMode, (), (const, override));
 
   //
   // Setters
@@ -103,6 +104,7 @@ public:
   MOCK_METHOD(void, setEnableDragAndDrop, (bool enableDragAndDrop), (override));
   MOCK_METHOD(void, setEnableLibei, (bool enableLibei), (override));
   MOCK_METHOD(void, setUpdateTrack, (const QString &updateTrack), (override));
+  MOCK_METHOD(void, setMacServerMode, (bool macServerMode), (override));
 
 private:
   const QString m_stub = "stub";
