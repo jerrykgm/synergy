@@ -97,7 +97,15 @@ class SynergyNetworkService(
         when (cmd) {
             "Cnob" -> {
                 // Heartbeat / Noop
-                onLog("Heartbeat (Cnob) received.")
+                onLog("Heartbeat (Cnob) received. Replying...")
+                try {
+                    val out = DataOutputStream(socket?.getOutputStream() ?: return)
+                    out.writeInt(4)
+                    out.writeBytes("Cnob")
+                    out.flush()
+                } catch (e: Exception) {
+                    onLog("Error replying to heartbeat: ${e.message}")
+                }
             }
             "Qinf" -> {
                 onLog("Server queried screen info (Qinf). Sending screen specs...")
