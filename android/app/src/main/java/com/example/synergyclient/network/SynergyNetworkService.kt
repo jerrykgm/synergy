@@ -38,7 +38,7 @@ class SynergyNetworkService(
     private val context:        Context,
     private val loggingEnabled: Boolean,
     private val onLog:          (String) -> Unit,
-    private val onStatusChange: (String) -> Unit
+    private val onStatusChange: (SynergyNetworkService, String) -> Unit
 ) {
     // ── Pre-allocated constants ───────────────────────────────────────────
     companion object {
@@ -94,7 +94,7 @@ class SynergyNetworkService(
             // Elevate IO thread priority for minimal scheduling jitter
             Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
             try {
-                onStatusChange("Connecting...")
+                onStatusChange(this@SynergyNetworkService, "Connecting...")
                 log("Opening socket to $host:$port...")
 
                 val s = Socket(host, port)
@@ -127,7 +127,7 @@ class SynergyNetworkService(
                 output.writeInt(nameBytes.size); output.write(nameBytes)
                 output.flush()
                 log("Hello sent as '$clientName'.")
-                onStatusChange("Connected")
+                onStatusChange(this@SynergyNetworkService, "Connected")
 
                 // ── STEP 3: Main packet loop (pre-allocated buffer) ────────
                 val readBuf = ByteArray(READ_BUF_SIZE)
@@ -144,11 +144,11 @@ class SynergyNetworkService(
 
             } catch (_: SocketException) {
                 // Normal disconnect — not an error
-                onStatusChange("Disconnected")
+                onStatusChange(this@SynergyNetworkService, "Disconnected")
             } catch (e: Exception) {
                 log("Error: ${e.message}")
                 Log.e(TAG, "Network exception", e)
-                onStatusChange("Disconnected")
+                onStatusChange(this@SynergyNetworkService, "Disconnected")
             } finally {
                 outputStream = null
                 logFlusher?.cancel()
@@ -156,7 +156,7 @@ class SynergyNetworkService(
                 try { socket?.close() } catch (_: Exception) {}
                 socket = null
                 job?.cancel()
-                onStatusChange("Disconnected")
+                onStatusChange(this@SynergyNetworkService, "Disconnected")
             }
         }
     }
@@ -166,7 +166,7 @@ class SynergyNetworkService(
         try { socket?.close() } catch (_: Exception) {}
         socket = null; outputStream = null
         job?.cancel(); job = null
-        onStatusChange("Disconnected")
+        onStatusChange(this, "Disconnected")
     }
 
     // ── Command dispatcher (HOT PATH — zero alloc for mouse/key) ─────────

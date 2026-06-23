@@ -61,10 +61,18 @@ fun MainScreen(
         context.getSharedPreferences("synergy_prefs", android.content.Context.MODE_PRIVATE)
     }
 
-    // ── Persistent settings ────────────────────────────────────────────────
+    val defaultClientName = remember {
+        val systemDeviceName = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
+            android.provider.Settings.Global.getString(context.contentResolver, android.provider.Settings.Global.DEVICE_NAME)
+        } else null
+        val bluetoothName = android.provider.Settings.Secure.getString(context.contentResolver, "bluetooth_name")
+        val rawName = systemDeviceName ?: bluetoothName ?: android.os.Build.MODEL
+        rawName.replace("[^a-zA-Z0-9-_]".toRegex(), "")
+    }
+
     var serverIp      by remember { mutableStateOf(prefs.getString("server_ip",    "10.40.194.37") ?: "10.40.194.37") }
     var port          by remember { mutableStateOf(prefs.getString("port",         "24800")        ?: "24800") }
-    var clientName    by remember { mutableStateOf(prefs.getString("client_name",  "AndroidClient") ?: "AndroidClient") }
+    var clientName    by remember { mutableStateOf(prefs.getString("client_name",  defaultClientName) ?: defaultClientName) }
     var autoReconnect by remember { mutableStateOf(prefs.getBoolean("auto_reconnect", true)) }
     var loggingEnabled by remember { mutableStateOf(prefs.getBoolean("logging_enabled", true)) }
     var isMacServerMode by remember { mutableStateOf(prefs.getBoolean("mac_server_mode", false)) }
@@ -165,14 +173,16 @@ fun MainScreen(
             context       = context,
             loggingEnabled = loggingEnabled,
             onLog         = { msg -> addLog(msg) },
-            onStatusChange = { status ->
-                connectionStatus = status
-                if (status == "Disconnected" && autoReconnect && networkService != null) {
-                    scope.launch {
-                        delay(3000)
-                        if (connectionStatus == "Disconnected" && networkService != null) {
-                            addLog("⟳ Auto-reconnecting...")
-                            connect()
+            onStatusChange = { serviceInstance, status ->
+                if (networkService === serviceInstance) {
+                    connectionStatus = status
+                    if (status == "Disconnected" && autoReconnect) {
+                        scope.launch {
+                            delay(3000)
+                            if (connectionStatus == "Disconnected" && networkService === serviceInstance) {
+                                addLog("⟳ Auto-reconnecting...")
+                                connect()
+                            }
                         }
                     }
                 }

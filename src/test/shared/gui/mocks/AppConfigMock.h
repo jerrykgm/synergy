@@ -104,6 +104,8 @@ public:
   MOCK_METHOD(void, setEnableDragAndDrop, (bool enableDragAndDrop), (override));
   MOCK_METHOD(void, setEnableLibei, (bool enableLibei), (override));
   MOCK_METHOD(void, setUpdateTrack, (const QString &updateTrack), (override));
+  MOCK_METHOD(bool, performanceMode, (), (const, override));
+  MOCK_METHOD(void, setPerformanceMode, (bool performanceMode), (override));
   MOCK_METHOD(void, setMacServerMode, (bool macServerMode), (override));
 
 private:

@@ -308,6 +308,14 @@ void Server::adoptClient(BaseClientProxy *client)
     return;
   }
 
+  // if a client is already found under the same name, disconnect it and replace with the new system
+  String clientName = getName(client);
+  ClientList::iterator it = m_clients.find(clientName);
+  if (it != m_clients.end()) {
+    LOG((CLOG_NOTE "replacing existing client \"%s\" with the new system connection", clientName.c_str()));
+    closeClient(it->second, kMsgEBusy);
+  }
+
   // add client to client list
   if (!addClient(client)) {
     // can only have one screen with a given name at any given time
