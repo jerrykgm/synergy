@@ -124,9 +124,26 @@ class SynergyNetworkService(
                 if (payload.size >= 4) {
                     val x = ((payload[0].toInt() and 0xFF) shl 8) or (payload[1].toInt() and 0xFF)
                     val y = ((payload[2].toInt() and 0xFF) shl 8) or (payload[3].toInt() and 0xFF)
-                    onLog("Mouse Move Event -> X: $x, Y: $y")
+                    onLog("Mouse Move -> X: $x, Y: $y")
+                    com.example.synergyclient.service.SynergyAccessibilityService.instance?.updateCursor(x, y)
                 } else {
                     onLog("Mouse Move Event received.")
+                }
+            }
+            "Dbbp" -> {
+                // Button press (e.g. left click)
+                if (payload.isNotEmpty()) {
+                    val buttonId = payload[0].toInt()
+                    onLog("Button Press -> ID: $buttonId")
+                    if (buttonId == 1) { // Left click
+                        com.example.synergyclient.service.SynergyAccessibilityService.instance?.clickCursor()
+                    }
+                }
+            }
+            "Dbbr" -> {
+                // Button release
+                if (payload.isNotEmpty()) {
+                    onLog("Button Release -> ID: ${payload[0].toInt()}")
                 }
             }
             else -> {

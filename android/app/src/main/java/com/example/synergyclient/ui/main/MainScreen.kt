@@ -19,6 +19,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation3.runtime.NavKey
+import androidx.compose.ui.platform.LocalContext
 import com.example.synergyclient.network.SynergyNetworkService
 import com.example.synergyclient.theme.SynergyClientTheme
 import kotlinx.coroutines.delay
@@ -30,6 +31,7 @@ fun MainScreen(
   onItemClick: (NavKey) -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  val context = LocalContext.current
   var serverIp by remember { mutableStateOf("192.168.1.100") }
   var port by remember { mutableStateOf("24800") }
   var clientName by remember { mutableStateOf("AndroidClient") }
@@ -38,6 +40,14 @@ fun MainScreen(
   val logs = remember { mutableStateListOf<String>("System ready. Enter Server IP to connect.") }
   val coroutineScope = rememberCoroutineScope()
   var networkService by remember { mutableStateOf<SynergyNetworkService?>(null) }
+  var isAccessibilityEnabled by remember { mutableStateOf(false) }
+
+  LaunchedEffect(Unit) {
+    while (true) {
+      isAccessibilityEnabled = com.example.synergyclient.service.SynergyAccessibilityService.instance != null
+      delay(1000)
+    }
+  }
 
   DisposableEffect(Unit) {
     onDispose {
@@ -72,6 +82,35 @@ fun MainScreen(
         fontSize = 14.sp,
         color = mutedTextColor
       )
+    }
+
+    // Accessibility Offline Warning Card
+    if (!isAccessibilityEnabled) {
+      Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF3B1E1E)),
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth()
+      ) {
+        Row(
+          modifier = Modifier.padding(12.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+          Column(modifier = Modifier.weight(1f)) {
+            Text("Accessibility Service Offline", fontWeight = FontWeight.Bold, color = Color(0xFFF78E8E))
+            Text("Required to draw cursor and inject clicks.", fontSize = 12.sp, color = Color(0xFFE2A0A0))
+          }
+          Button(
+            onClick = {
+              context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB3261E)),
+            shape = RoundedCornerShape(6.dp)
+          ) {
+            Text("ENABLE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+          }
+        }
+      }
     }
 
     // Config Card

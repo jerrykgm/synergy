@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Synergy Client</string>
+    <string name="accessibility_service_description">Injects mouse clicks, gestures, and displays a pointer overlay when connected to your Synergy Server PC.</string>
 </resources>
