@@ -485,6 +485,10 @@ class SynergyAccessibilityService : AccessibilityService() {
         Pair(dm.widthPixels, dm.heightPixels)
     }
 
+    fun setMacMode(enabled: Boolean) {
+        cachedMacServerMode = enabled
+    }
+
     private fun screenW(): Int = getFullScreenSize().first
     private fun screenH(): Int = getFullScreenSize().second
     private fun clampX(v: Int) = v.coerceIn(0, (screenW() - 1).coerceAtLeast(0))

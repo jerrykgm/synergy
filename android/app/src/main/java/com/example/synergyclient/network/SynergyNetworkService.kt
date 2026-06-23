@@ -119,6 +119,30 @@ class SynergyNetworkService(
                 log("Server: $protocol v$major.$minor")
                 if (protocol != "Synergy") throw Exception("Bad protocol: $protocol")
 
+                // Auto-detect server OS via hostname in hello packet (if present)
+                var serverName = ""
+                if (helloLen >= 15) {
+                    val nameLen = ((helloBytes[11].toInt() and 0xFF) shl 24) or
+                                  ((helloBytes[12].toInt() and 0xFF) shl 16) or
+                                  ((helloBytes[13].toInt() and 0xFF) shl 8) or
+                                  (helloBytes[14].toInt() and 0xFF)
+                    if (nameLen > 0 && helloLen >= 15 + nameLen) {
+                        serverName = String(helloBytes, 15, nameLen, StandardCharsets.US_ASCII)
+                    }
+                }
+                if (serverName.isNotEmpty()) {
+                    log("Server hostname: '$serverName'")
+                    val isMac = serverName.lowercase().let {
+                        it.contains("mac") || it.contains("apple") || it.contains("osx") || it.contains("os x")
+                    }
+                    if (isMac) {
+                        log("Auto-detected macOS server. Enabling Mac optimizations.")
+                        com.example.synergyclient.service.SynergyAccessibilityService.instance?.setMacMode(true)
+                    } else {
+                        com.example.synergyclient.service.SynergyAccessibilityService.instance?.setMacMode(false)
+                    }
+                }
+
                 // ── STEP 2: Send Client Hello ──────────────────────────────
                 val nameBytes = clientName.toByteArray(StandardCharsets.US_ASCII)
                 output.writeInt(7 + 2 + 2 + 4 + nameBytes.size)
@@ -156,6 +180,12 @@ class SynergyNetworkService(
                 try { socket?.close() } catch (_: Exception) {}
                 socket = null
                 job?.cancel()
+
+                // Revert to user's manual preference when disconnected
+                val manualMac = context.getSharedPreferences("synergy_prefs", Context.MODE_PRIVATE)
+                    .getBoolean("mac_server_mode", false)
+                com.example.synergyclient.service.SynergyAccessibilityService.instance?.setMacMode(manualMac)
+
                 onStatusChange(this@SynergyNetworkService, "Disconnected")
             }
         }
