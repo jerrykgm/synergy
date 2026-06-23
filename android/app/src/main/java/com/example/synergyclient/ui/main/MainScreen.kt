@@ -80,7 +80,11 @@ fun MainScreen(
 
     var serverIp      by remember { mutableStateOf(prefs.getString("server_ip",    "10.40.194.37") ?: "10.40.194.37") }
     var port          by remember { mutableStateOf(prefs.getString("port",         "24800")        ?: "24800") }
-    var clientName    by remember { mutableStateOf(prefs.getString("client_name",  defaultClientName) ?: defaultClientName) }
+    var clientName    by remember {
+        val saved = prefs.getString("client_name", null)
+        val initial = if (saved == null || saved == "AndroidClient") defaultClientName else saved
+        mutableStateOf(initial)
+    }
     var autoReconnect by remember { mutableStateOf(prefs.getBoolean("auto_reconnect", true)) }
     var loggingEnabled by remember { mutableStateOf(prefs.getBoolean("logging_enabled", true)) }
     var isMacServerMode by remember { mutableStateOf(prefs.getBoolean("mac_server_mode", false)) }
