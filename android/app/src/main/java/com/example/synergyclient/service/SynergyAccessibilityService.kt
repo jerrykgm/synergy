@@ -109,6 +109,13 @@ class SynergyAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
         when (event.eventType) {
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                synchronized(textBuffer) {
+                    textBuffer.clear()
+                    lastActiveNode?.recycle()
+                    lastActiveNode = null
+                }
+            }
             AccessibilityEvent.TYPE_VIEW_FOCUSED,
             AccessibilityEvent.TYPE_VIEW_CLICKED -> {
                 val src = event.source ?: return
@@ -308,12 +315,24 @@ class SynergyAccessibilityService : AccessibilityService() {
     private fun insertChar(ch: Char) = insertString(ch.toString())
 
     private fun updateBufferIfNodeChanged(currentNode: AccessibilityNodeInfo) {
-        val isSame = lastActiveNode?.let { it == currentNode } ?: false
+        val last = lastActiveNode
+        val isSame = last != null &&
+                     last.windowId == currentNode.windowId &&
+                     last.className == currentNode.className &&
+                     last.packageName == currentNode.packageName &&
+                     last.viewIdResourceName == currentNode.viewIdResourceName &&
+                     last == currentNode
+
         if (!isSame) {
             textBuffer.clear()
             textBuffer.append(currentNode.text?.toString() ?: "")
             lastActiveNode?.recycle()
             lastActiveNode = AccessibilityNodeInfo.obtain(currentNode)
+        } else {
+            val screenText = currentNode.text?.toString() ?: ""
+            if (screenText.isEmpty() && textBuffer.isNotEmpty()) {
+                textBuffer.clear()
+            }
         }
     }
 
