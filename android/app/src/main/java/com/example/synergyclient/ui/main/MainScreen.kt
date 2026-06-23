@@ -19,6 +19,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation3.runtime.NavKey
+import com.example.synergyclient.network.SynergyNetworkService
 import com.example.synergyclient.theme.SynergyClientTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -36,6 +37,13 @@ fun MainScreen(
   var connectionStatus by remember { mutableStateOf("Disconnected") }
   val logs = remember { mutableStateListOf<String>("System ready. Enter Server IP to connect.") }
   val coroutineScope = rememberCoroutineScope()
+  var networkService by remember { mutableStateOf<SynergyNetworkService?>(null) }
+
+  DisposableEffect(Unit) {
+    onDispose {
+      networkService?.stop()
+    }
+  }
 
   val backgroundColor = Color(0xFF0F1015)
   val cardColor = Color(0xFF171821)
@@ -135,24 +143,24 @@ fun MainScreen(
         Button(
           onClick = {
             if (isConnected || connectionStatus == "Connecting...") {
-              // Disconnect
-              isConnected = false
-              connectionStatus = "Disconnected"
-              logs.add("Disconnected from server.")
+              networkService?.stop()
+              networkService = null
             } else {
-              // Connect
-              coroutineScope.launch {
-                connectionStatus = "Connecting..."
-                logs.add("Connecting to server at $serverIp:$port...")
-                delay(1000)
-                logs.add("Sending client info '$clientName'...")
-                delay(800)
-                logs.add("Performing secure TLS handshake...")
-                delay(1000)
-                isConnected = true
-                connectionStatus = "Connected"
-                logs.add("Connected successfully! Ready to receive input.")
-              }
+              val portNum = port.toIntOrNull() ?: 24800
+              val service = SynergyNetworkService(
+                host = serverIp,
+                port = portNum,
+                clientName = clientName,
+                onLog = { logMsg ->
+                  logs.add(logMsg)
+                },
+                onStatusChange = { status ->
+                  connectionStatus = status
+                  isConnected = (status == "Connected")
+                }
+              )
+              networkService = service
+              service.start()
             }
           },
           colors = ButtonDefaults.buttonColors(
