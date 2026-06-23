@@ -120,7 +120,7 @@ class SynergyAccessibilityService : AccessibilityService() {
             AccessibilityEvent.TYPE_VIEW_CLICKED -> {
                 val src = event.source ?: return
                 if (src.isEditable) {
-                    val existing = src.text?.toString() ?: ""
+                    val existing = getNodeText(src)
                     synchronized(textBuffer) {
                         textBuffer.clear()
                         textBuffer.append(existing)
@@ -134,7 +134,7 @@ class SynergyAccessibilityService : AccessibilityService() {
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
                 val src = event.source ?: return
                 if (src.isEditable && !isSynergyActive) {
-                    val existing = src.text?.toString() ?: ""
+                    val existing = getNodeText(src)
                     synchronized(textBuffer) {
                         textBuffer.clear()
                         textBuffer.append(existing)
@@ -314,6 +314,13 @@ class SynergyAccessibilityService : AccessibilityService() {
 
     private fun insertChar(ch: Char) = insertString(ch.toString())
 
+    private fun getNodeText(node: AccessibilityNodeInfo): String {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && node.isShowingHintText) {
+            return ""
+        }
+        return node.text?.toString() ?: ""
+    }
+
     private fun updateBufferIfNodeChanged(currentNode: AccessibilityNodeInfo) {
         val last = lastActiveNode
         val isSame = last != null &&
@@ -325,11 +332,11 @@ class SynergyAccessibilityService : AccessibilityService() {
 
         if (!isSame) {
             textBuffer.clear()
-            textBuffer.append(currentNode.text?.toString() ?: "")
+            textBuffer.append(getNodeText(currentNode))
             lastActiveNode?.recycle()
             lastActiveNode = AccessibilityNodeInfo.obtain(currentNode)
         } else {
-            val screenText = currentNode.text?.toString() ?: ""
+            val screenText = getNodeText(currentNode)
             if (screenText.isEmpty() && textBuffer.isNotEmpty()) {
                 textBuffer.clear()
             }
@@ -432,6 +439,10 @@ class SynergyAccessibilityService : AccessibilityService() {
     fun setClipboard(text: String) {
         mainHandler.post {
             try {
+                val current = getClipboardText()
+                if (current == text) {
+                    return@post
+                }
                 val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 cm.setPrimaryClip(ClipData.newPlainText("Synergy", text))
             } catch (_: Exception) {}
