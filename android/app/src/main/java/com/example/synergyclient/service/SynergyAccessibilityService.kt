@@ -284,7 +284,7 @@ class SynergyAccessibilityService : AccessibilityService() {
 
             when (keyId) {
                 0xFF08, 0xEF08, 0x0008      -> deleteLastChar()
-                0xFF0D, 0xFF8D, 0x000D, 0x000A -> insertChar('\n')
+                0xFF0D, 0xFF8D, 0x000D, 0x000A -> triggerEnterKey()
                 0xFF09, 0x0009              -> insertChar('\t')
                 0xFF1B, 0x001B              -> performGlobalAction(GLOBAL_ACTION_BACK)
                 0xFFFF, 0xFF9F, 0xEF9F      -> deleteForwardChar()
@@ -373,6 +373,19 @@ class SynergyAccessibilityService : AccessibilityService() {
                 putString(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, newText)
             }
         )
+        node.recycle()
+    }
+
+    private fun triggerEnterKey() {
+        val node = focusedEditable() ?: return
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            val success = node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+            if (!success) {
+                insertChar('\n')
+            }
+        } else {
+            insertChar('\n')
+        }
         node.recycle()
     }
 

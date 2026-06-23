@@ -324,7 +324,7 @@ private:
   bool m_EnableDragAndDrop = false;
   bool m_EnableLibei = deskflow::gui::kDefaultEnableLibei;
   bool m_MacServerMode = false;
-  bool m_PerformanceMode = false;
+  bool m_PerformanceMode = true;
 
   /**
    * @brief Flag is set when any TLS is setting is changed, and is reset

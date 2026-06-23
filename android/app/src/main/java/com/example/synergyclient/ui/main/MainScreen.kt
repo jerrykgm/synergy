@@ -86,7 +86,7 @@ fun MainScreen(
         mutableStateOf(initial)
     }
     var autoReconnect by remember { mutableStateOf(prefs.getBoolean("auto_reconnect", true)) }
-    var loggingEnabled by remember { mutableStateOf(prefs.getBoolean("logging_enabled", true)) }
+    var loggingEnabled by remember { mutableStateOf(prefs.getBoolean("logging_enabled", false)) }
     var isMacServerMode by remember { mutableStateOf(prefs.getBoolean("mac_server_mode", false)) }
 
     // ── Connection state ───────────────────────────────────────────────────
