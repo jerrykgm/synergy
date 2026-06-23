@@ -504,7 +504,9 @@ bool CoreProcess::addGenericArgs(QStringList &args, const ProcessMode processMod
 {
   args << "-f"
        << "--no-tray"
-       << "--debug" << m_appConfig.logLevelText();
+       // Performance Mode: override log level to WARNING for maximum real-time throughput.
+       // WARNING level silences all INFO/DEBUG packet traces with zero overhead.
+       << "--debug" << (m_appConfig.performanceMode() ? QStringLiteral("WARNING") : m_appConfig.logLevelText());
 
   args << "--name" << m_appConfig.screenName();
 

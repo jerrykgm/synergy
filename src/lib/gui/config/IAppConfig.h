@@ -76,6 +76,7 @@ public:
   virtual bool enableLibei() const = 0;
   virtual QString updateTrack() const = 0;
   virtual bool macServerMode() const = 0;
+  virtual bool performanceMode() const = 0;
 
   //
   // Setters
@@ -103,6 +104,7 @@ public:
   virtual void setEnableLibei(bool enableLibei) = 0;
   virtual void setUpdateTrack(const QString &updateTrack) = 0;
   virtual void setMacServerMode(bool macServerMode) = 0;
+  virtual void setPerformanceMode(bool performanceMode) = 0;
 };
 
 } // namespace deskflow::gui

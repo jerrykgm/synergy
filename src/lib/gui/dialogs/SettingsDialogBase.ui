@@ -157,6 +157,16 @@
             </property>
            </widget>
           </item>
+          <item>
+           <widget class="QCheckBox" name="m_pCheckBoxPerformanceMode">
+            <property name="text">
+             <string>Performance Mode — minimize logging for lowest latency (recommended for production)</string>
+            </property>
+            <property name="toolTip">
+             <string>When enabled, sets core process log level to WARNING only. This eliminates INFO/DEBUG packet traces from the hot path, reducing latency for mouse and keyboard events.</string>
+            </property>
+           </widget>
+          </item>
          </layout>
         </widget>
        </item>

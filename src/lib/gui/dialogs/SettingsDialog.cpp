@@ -161,6 +161,7 @@ void SettingsDialog::accept()
   m_appConfig.setLanguageSync(m_pCheckBoxLanguageSync->isChecked());
   m_appConfig.setInvertScrollDirection(m_pCheckBoxScrollDirection->isChecked());
   m_appConfig.setMacServerMode(m_pCheckBoxMacServerMode->isChecked());
+  m_appConfig.setPerformanceMode(m_pCheckBoxPerformanceMode->isChecked());
   m_appConfig.setEnableService(m_pCheckBoxServiceEnabled->isChecked());
   m_appConfig.setCloseToTray(m_pCheckBoxCloseToTray->isChecked());
   m_appConfig.setInvertConnection(m_pCheckBoxInvertConnection->isChecked());
@@ -184,6 +185,7 @@ void SettingsDialog::loadFromConfig()
   m_pCheckBoxLanguageSync->setChecked(m_appConfig.languageSync());
   m_pCheckBoxScrollDirection->setChecked(m_appConfig.invertScrollDirection());
   m_pCheckBoxMacServerMode->setChecked(m_appConfig.macServerMode());
+  m_pCheckBoxPerformanceMode->setChecked(m_appConfig.performanceMode());
   m_pCheckBoxServiceEnabled->setChecked(m_appConfig.enableService());
   m_pCheckBoxCloseToTray->setChecked(m_appConfig.closeToTray());
   m_pComboElevate->setCurrentIndex(static_cast<int>(m_appConfig.elevateMode()));

@@ -97,6 +97,7 @@ const char *const AppConfig::m_SettingsName[] = {
     "enableLibei",
     "updateTrack",
     "macServerMode",
+    "performanceMode",
 };
 
 AppConfig::AppConfig(deskflow::gui::ISettings &settings, std::shared_ptr<Deps> deps)
@@ -150,6 +151,7 @@ void AppConfig::recall()
   m_EnableDragAndDrop = get(kEnableDragAndDrop, m_EnableDragAndDrop).toBool();
   m_EnableLibei = get(kEnableLibei, m_EnableLibei).toBool();
   m_MacServerMode = get(kMacServerMode, m_MacServerMode).toBool();
+  m_PerformanceMode = get(kPerformanceMode, m_PerformanceMode).toBool();
 
   auto &locked = m_Settings.getLockedSettings();
   if (locked.contains(settingName(kTlsEnabled))) {
@@ -223,6 +225,7 @@ void AppConfig::commit()
     set(kEnableLibei, m_EnableLibei);
     set(kUpdateTrack, m_UpdateTrack);
     set(kMacServerMode, m_MacServerMode);
+    set(kPerformanceMode, m_PerformanceMode);
   }
 
   if (m_TlsChanged) {
@@ -404,6 +407,11 @@ bool AppConfig::languageSync() const
 bool AppConfig::macServerMode() const
 {
   return m_MacServerMode;
+}
+
+bool AppConfig::performanceMode() const
+{
+  return m_PerformanceMode;
 }
 
 bool AppConfig::preventSleep() const
@@ -647,6 +655,11 @@ void AppConfig::setLanguageSync(bool newValue)
 void AppConfig::setMacServerMode(bool newValue)
 {
   m_MacServerMode = newValue;
+}
+
+void AppConfig::setPerformanceMode(bool newValue)
+{
+  m_PerformanceMode = newValue;
 }
 
 void AppConfig::setPreventSleep(bool newValue)

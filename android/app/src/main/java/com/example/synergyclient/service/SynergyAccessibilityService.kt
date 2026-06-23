@@ -5,6 +5,7 @@ import android.accessibilityservice.GestureDescription
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.*
 import android.os.Bundle
 import android.os.Handler
@@ -22,6 +23,7 @@ class SynergyAccessibilityService : AccessibilityService() {
     private lateinit var overlayView: CursorOverlayView
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    // ── Cursor state (volatile for cross-thread reads from network thread) ─
     // -1 = not yet positioned by server (cursor hidden until first CINN/DMMV)
     @Volatile var cursorX: Int = -1
         private set
@@ -30,25 +32,43 @@ class SynergyAccessibilityService : AccessibilityService() {
     @Volatile var isSynergyActive: Boolean = false
         private set
 
+    // ── Invalidate coalescing — prevents flooding the main thread ──────────
     private val invalidatePending = AtomicBoolean(false)
     private val invalidateRunnable = Runnable {
         invalidatePending.set(false)
         if (::overlayView.isInitialized) overlayView.invalidate()
     }
 
-    // ── Local text buffer: mirrors what's in the focused field ────────────
-    // Avoids reading stale node.text on every keystroke (causes "enenenen")
+    // ── Pre-allocated gesture path objects (never reallocated) ────────────
+    private val clickPath  = Path()
+    private val scrollPath = Path()
+
+    // ── Mac Server Mode — cached to avoid SharedPreferences I/O on hot path
+    @Volatile private var cachedMacServerMode: Boolean = false
+    private var prefsListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
+    private var sharedPrefs: SharedPreferences? = null
+
+    // ── Text buffer: mirrors focused field content to avoid stale node reads
     private val textBuffer = StringBuilder()
     private var textBufferInitialized = false
 
     private var lastClickTime = 0L
 
-    private val isMacServerMode: Boolean
-        get() = getSharedPreferences("synergy_prefs", Context.MODE_PRIVATE).getBoolean("mac_server_mode", false)
-
     // ── Lifecycle ─────────────────────────────────────────────────────────
 
-    override fun onCreate() { super.onCreate(); instance = this }
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+        // Cache mac server mode from prefs once, then listen for changes
+        sharedPrefs = getSharedPreferences("synergy_prefs", Context.MODE_PRIVATE)
+        cachedMacServerMode = sharedPrefs!!.getBoolean("mac_server_mode", false)
+        prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+            if (key == "mac_server_mode") {
+                cachedMacServerMode = prefs.getBoolean("mac_server_mode", false)
+            }
+        }
+        sharedPrefs!!.registerOnSharedPreferenceChangeListener(prefsListener)
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -58,11 +78,9 @@ class SynergyAccessibilityService : AccessibilityService() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
             try {
                 softKeyboardController.addOnShowModeChangedListener { controller, mode ->
-                    if (isSynergyActive && mode != android.accessibilityservice.AccessibilityService.SHOW_MODE_HIDDEN) {
+                    if (isSynergyActive && mode != SHOW_MODE_HIDDEN) {
                         mainHandler.post {
-                            try {
-                                controller.showMode = android.accessibilityservice.AccessibilityService.SHOW_MODE_HIDDEN
-                            } catch (_: Exception) {}
+                            try { controller.showMode = SHOW_MODE_HIDDEN } catch (_: Exception) {}
                         }
                     }
                 }
@@ -81,9 +99,9 @@ class SynergyAccessibilityService : AccessibilityService() {
         mainHandler.post {
             try {
                 windowManager.addView(overlayView, params)
-                android.util.Log.i("SynergyApp", "Cursor overlay added successfully")
+                android.util.Log.i("SynergyApp", "Cursor overlay added")
             } catch (e: Exception) {
-                android.util.Log.e("SynergyApp", "Failed to add cursor overlay: ${e.message}", e)
+                android.util.Log.e("SynergyApp", "Failed to add overlay: ${e.message}", e)
             }
         }
     }
@@ -91,8 +109,8 @@ class SynergyAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
         when (event.eventType) {
-            // When a text field gains focus or is tapped: sync our buffer and suppress keyboard
-            AccessibilityEvent.TYPE_VIEW_FOCUSED, AccessibilityEvent.TYPE_VIEW_CLICKED -> {
+            AccessibilityEvent.TYPE_VIEW_FOCUSED,
+            AccessibilityEvent.TYPE_VIEW_CLICKED -> {
                 val src = event.source ?: return
                 if (src.isEditable) {
                     val existing = src.text?.toString() ?: ""
@@ -105,7 +123,6 @@ class SynergyAccessibilityService : AccessibilityService() {
                 }
                 src.recycle()
             }
-            // When text changes externally (user tapped, paste from system, etc.): re-sync buffer
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
                 val src = event.source ?: return
                 if (src.isEditable && !isSynergyActive) {
@@ -124,17 +141,22 @@ class SynergyAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        prefsListener?.let { sharedPrefs?.unregisterOnSharedPreferenceChangeListener(it) }
         if (::windowManager.isInitialized && ::overlayView.isInitialized) {
             mainHandler.post { try { windowManager.removeView(overlayView) } catch (_: Exception) {} }
         }
         instance = null
     }
 
-    // ── Cursor ────────────────────────────────────────────────────────────
+    // ── Cursor (called from network IO thread — must be lock-free) ────────
 
     fun updateCursor(newX: Int, newY: Int) {
-        cursorX = clampX(newX); cursorY = clampY(newY)
-        if (invalidatePending.compareAndSet(false, true)) mainHandler.post(invalidateRunnable)
+        cursorX = clampX(newX)
+        cursorY = clampY(newY)
+        // Coalesce invalidates: only post one runnable at a time
+        if (invalidatePending.compareAndSet(false, true)) {
+            mainHandler.post(invalidateRunnable)
+        }
     }
 
     fun moveCursorRelative(dx: Int, dy: Int) = updateCursor(cursorX + dx, cursorY + dy)
@@ -146,35 +168,48 @@ class SynergyAccessibilityService : AccessibilityService() {
 
         val cx = cursorX.toFloat()
         val cy = cursorY.toFloat()
-        val path = Path().apply { moveTo(cx, cy) }
+
+        // Reuse pre-allocated path
+        clickPath.reset()
+        clickPath.moveTo(cx, cy)
 
         if (isDoubleClick) {
-            val stroke1 = GestureDescription.StrokeDescription(path, 0, 10)
-            val stroke2 = GestureDescription.StrokeDescription(path, 50, 10)
+            // Two taps with 40ms gap — minimum duration (1ms) for lowest latency
+            val stroke1 = GestureDescription.StrokeDescription(clickPath, 0,  1)
+            val stroke2 = GestureDescription.StrokeDescription(clickPath, 40, 1)
             dispatchGesture(
                 GestureDescription.Builder()
                     .addStroke(stroke1)
                     .addStroke(stroke2)
                     .build(), null, null
             )
-            lastClickTime = 0L // reset to prevent triple taps
+            lastClickTime = 0L  // prevent triple-tap
         } else {
             dispatchGesture(
                 GestureDescription.Builder()
-                    .addStroke(GestureDescription.StrokeDescription(path, 0, 10))
+                    .addStroke(GestureDescription.StrokeDescription(clickPath, 0, 1))
                     .build(), null, null
             )
         }
     }
 
     fun scroll(dx: Int, dy: Int) {
-        val x = cursorX.toFloat(); val y = cursorY.toFloat()
-        val endX = (x - dx * 3f).coerceIn(0f, screenW().toFloat())
-        val endY = (y - dy * 3f).coerceIn(0f, screenH().toFloat())
-        val path = Path().apply { moveTo(x, y); lineTo(endX, endY) }
+        val x   = cursorX.toFloat()
+        val y   = cursorY.toFloat()
+        val w   = screenW().toFloat()
+        val h   = screenH().toFloat()
+        val endX = (x - dx * 3f).coerceIn(0f, w)
+        val endY = (y - dy * 3f).coerceIn(0f, h)
+
+        // Reuse pre-allocated path
+        scrollPath.reset()
+        scrollPath.moveTo(x, y)
+        scrollPath.lineTo(endX, endY)
+
+        // 50ms duration — fast enough for smooth scroll, short enough for responsiveness
         dispatchGesture(
             GestureDescription.Builder()
-                .addStroke(GestureDescription.StrokeDescription(path, 0, 100))
+                .addStroke(GestureDescription.StrokeDescription(scrollPath, 0, 50))
                 .build(), null, null
         )
     }
@@ -191,7 +226,7 @@ class SynergyAccessibilityService : AccessibilityService() {
         mainHandler.post {
             try {
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                    softKeyboardController.showMode = android.accessibilityservice.AccessibilityService.SHOW_MODE_AUTO
+                    softKeyboardController.showMode = SHOW_MODE_AUTO
                 }
             } catch (_: Exception) {}
         }
@@ -200,7 +235,7 @@ class SynergyAccessibilityService : AccessibilityService() {
     private fun suppressKeyboard() {
         try {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                softKeyboardController.showMode = android.accessibilityservice.AccessibilityService.SHOW_MODE_HIDDEN
+                softKeyboardController.showMode = SHOW_MODE_HIDDEN
             }
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             val token = if (::overlayView.isInitialized) overlayView.windowToken else null
@@ -217,13 +252,12 @@ class SynergyAccessibilityService : AccessibilityService() {
             val isAlt   = (modifiers and 0x0004) != 0
             val isCmd   = (modifiers and 0x0008) != 0
 
-            val ctrl = if (isMacServerMode) {
+            // Use cached value — no SharedPreferences I/O on hot path
+            val ctrl = if (cachedMacServerMode) {
                 isCmd || isCtrl
             } else {
-                isCtrl || isAlt // Alt fallback for historical compatibility
+                isCtrl || isAlt
             }
-
-            val shift = isShift
 
             if (ctrl) {
                 val lower = if (keyId in 0x41..0x5A) keyId + 32 else keyId
@@ -237,42 +271,41 @@ class SynergyAccessibilityService : AccessibilityService() {
             }
 
             when (keyId) {
-                0xFF08, 0xEF08 -> deleteLastChar()
-                0xFF0D, 0xFF8D -> insertChar('\n')
-                0xFF09 -> insertChar('\t')
-                0xFF1B -> performGlobalAction(GLOBAL_ACTION_BACK)
-                0xFFFF, 0xFF9F, 0xEF9F -> deleteForwardChar()
-                in 0xFF50..0xFFFF -> { /* navigation/function keys — ignore */ }
+                0xFF08, 0xEF08              -> deleteLastChar()
+                0xFF0D, 0xFF8D              -> insertChar('\n')
+                0xFF09                      -> insertChar('\t')
+                0xFF1B                      -> performGlobalAction(GLOBAL_ACTION_BACK)
+                0xFFFF, 0xFF9F, 0xEF9F      -> deleteForwardChar()
+                in 0xFF50..0xFFFF           -> { /* navigation/function keys */ }
                 in 0x20..0x7E -> {
-                    val ch = if (shift && keyId in 0x61..0x7A)
+                    val ch = if (isShift && keyId in 0x61..0x7A)
                         (keyId - 32).toChar() else keyId.toChar()
                     insertChar(ch)
                 }
                 in 0x00A0..0x10FFFF -> {
                     val s = if (keyId <= 0xFFFF) keyId.toChar().toString()
-                            else String(Character.toChars(keyId))
+                    else String(Character.toChars(keyId))
                     insertString(s)
                 }
             }
         }
     }
 
-    /** Called for DKDL — lang field is keyboard language code (e.g. "en"), NOT the character.
-     *  Always use keyId for the actual character to inject. */
+    /**
+     * Called for DKDL (key with language tag).
+     * The lang field is the keyboard language (e.g. "en"), NOT the typed character.
+     * Character is always encoded in keyId.
+     */
     fun handleKeyDownLang(keyId: Int, modifiers: Int, langText: String) {
-        // langText is e.g. "en", "hi", "ar" — keyboard language, not the typed char
-        // The character is always encoded in keyId
         handleKeyDown(keyId, modifiers)
     }
 
-    // Insert a single character using our local buffer (no node.text read)
     private fun insertChar(ch: Char) = insertString(ch.toString())
 
     private fun insertString(s: String) {
         val node = focusedEditable() ?: return
         val newText = synchronized(textBuffer) {
             if (!textBufferInitialized) {
-                // First keystroke in this field — bootstrap from node
                 textBuffer.clear()
                 textBuffer.append(node.text?.toString() ?: "")
                 textBufferInitialized = true
@@ -280,10 +313,12 @@ class SynergyAccessibilityService : AccessibilityService() {
             textBuffer.append(s)
             textBuffer.toString()
         }
-        node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,
+        node.performAction(
+            AccessibilityNodeInfo.ACTION_SET_TEXT,
             Bundle().apply {
                 putString(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, newText)
-            })
+            }
+        )
         node.recycle()
         suppressKeyboard()
     }
@@ -299,10 +334,12 @@ class SynergyAccessibilityService : AccessibilityService() {
             if (textBuffer.isNotEmpty()) textBuffer.deleteCharAt(textBuffer.length - 1)
             textBuffer.toString()
         }
-        node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,
+        node.performAction(
+            AccessibilityNodeInfo.ACTION_SET_TEXT,
             Bundle().apply {
                 putString(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, newText)
-            })
+            }
+        )
         node.recycle()
     }
 
@@ -322,19 +359,17 @@ class SynergyAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow
         if (root != null) {
             val node = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-            if (node != null && node.isEditable) {
-                return node
-            }
+            if (node != null && node.isEditable) return node
             val manual = findFocusedEditableNode(root)
             if (manual != null) {
+                root.recycle()
                 return manual
             }
             root.recycle()
         }
-        // Fallback: Traverse all windows (essential on Samsung/OneUI where accessibility overlay may override rootInActiveWindow)
+        // Fallback: traverse all windows (required on Samsung/OneUI)
         try {
-            val wins = windows
-            for (win in wins) {
+            for (win in windows) {
                 val wRoot = win.root ?: continue
                 val node = wRoot.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
                 if (node != null && node.isEditable) {
@@ -353,15 +388,11 @@ class SynergyAccessibilityService : AccessibilityService() {
     }
 
     private fun findFocusedEditableNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        if (node.isFocused && node.isEditable) {
-            // Return a copy so we can recycle the original traversal nodes safely
-            return AccessibilityNodeInfo.obtain(node)
-        }
+        if (node.isFocused && node.isEditable) return AccessibilityNodeInfo.obtain(node)
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             val found = findFocusedEditableNode(child)
             if (found != null) {
-                // If it's not the found node itself, we recycle child
                 if (found != child) child.recycle()
                 return found
             }
@@ -381,29 +412,23 @@ class SynergyAccessibilityService : AccessibilityService() {
         }
     }
 
-    fun getClipboardText(): String {
-        return try {
-            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            cm.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() ?: ""
-        } catch (_: Exception) { "" }
-    }
+    fun getClipboardText(): String = try {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() ?: ""
+    } catch (_: Exception) { "" }
 
-    // ── Helpers ───────────────────────────────────────────────
+    // ── Screen size helpers ───────────────────────────────────────────────
 
     /**
-     * Full physical screen size including navigation bar.
-     * Used for BOTH cursor clamping AND DINF so coordinates are consistent.
-     * displayMetrics.heightPixels excludes the nav bar — do NOT use it here.
+     * Returns full physical screen size including navigation bar.
+     * Used for BOTH cursor clamping AND DINF so coordinates stay consistent.
      */
-    fun getFullScreenSize(): Pair<Int, Int> {
-        return try {
-            val b = windowManager.currentWindowMetrics.bounds
-            Pair(b.width(), b.height())
-        } catch (_: Exception) {
-            // Fallback: displayMetrics (may exclude nav bar, but better than nothing)
-            val dm = resources.displayMetrics
-            Pair(dm.widthPixels, dm.heightPixels)
-        }
+    fun getFullScreenSize(): Pair<Int, Int> = try {
+        val b = windowManager.currentWindowMetrics.bounds
+        Pair(b.width(), b.height())
+    } catch (_: Exception) {
+        val dm = resources.displayMetrics
+        Pair(dm.widthPixels, dm.heightPixels)
     }
 
     private fun screenW(): Int = getFullScreenSize().first
@@ -412,6 +437,7 @@ class SynergyAccessibilityService : AccessibilityService() {
     private fun clampY(v: Int) = v.coerceIn(0, (screenH() - 1).coerceAtLeast(0))
 
     companion object {
+        @Volatile
         var instance: SynergyAccessibilityService? = null
             private set
     }
