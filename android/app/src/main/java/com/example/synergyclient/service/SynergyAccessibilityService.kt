@@ -72,8 +72,8 @@ class SynergyAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
         when (event.eventType) {
-            // When a text field gains focus: sync our buffer from its current text
-            AccessibilityEvent.TYPE_VIEW_FOCUSED -> {
+            // When a text field gains focus or is tapped: sync our buffer and suppress keyboard
+            AccessibilityEvent.TYPE_VIEW_FOCUSED, AccessibilityEvent.TYPE_VIEW_CLICKED -> {
                 val src = event.source ?: return
                 if (src.isEditable) {
                     val existing = src.text?.toString() ?: ""
@@ -264,9 +264,55 @@ class SynergyAccessibilityService : AccessibilityService() {
     }
 
     private fun focusedEditable(): AccessibilityNodeInfo? {
-        val root = rootInActiveWindow ?: return null
-        val node = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return null
-        return if (node.isEditable) node else { node.recycle(); null }
+        val root = rootInActiveWindow
+        if (root != null) {
+            val node = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            if (node != null && node.isEditable) {
+                return node
+            }
+            val manual = findFocusedEditableNode(root)
+            if (manual != null) {
+                return manual
+            }
+            root.recycle()
+        }
+        // Fallback: Traverse all windows (essential on Samsung/OneUI where accessibility overlay may override rootInActiveWindow)
+        try {
+            val wins = windows
+            for (win in wins) {
+                val wRoot = win.root ?: continue
+                val node = wRoot.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                if (node != null && node.isEditable) {
+                    wRoot.recycle()
+                    return node
+                }
+                val manual = findFocusedEditableNode(wRoot)
+                if (manual != null) {
+                    wRoot.recycle()
+                    return manual
+                }
+                wRoot.recycle()
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    private fun findFocusedEditableNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        if (node.isFocused && node.isEditable) {
+            // Return a copy so we can recycle the original traversal nodes safely
+            return AccessibilityNodeInfo.obtain(node)
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findFocusedEditableNode(child)
+            if (found != null) {
+                // If it's not the found node itself, we recycle child
+                if (found != child) child.recycle()
+                return found
+            }
+            child.recycle()
+        }
+        return null
     }
 
     // ── Clipboard ─────────────────────────────────────────────────────────

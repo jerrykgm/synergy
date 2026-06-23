@@ -41,11 +41,13 @@ fun MainScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    val prefs = remember { context.getSharedPreferences("synergy_prefs", android.content.Context.MODE_PRIVATE) }
+
     // ── Persistent settings ────────────────────────────────────────────────
-    var serverIp     by remember { mutableStateOf("10.40.194.37") }
-    var port         by remember { mutableStateOf("24800") }
-    var clientName   by remember { mutableStateOf("AndroidClient") }
-    var autoReconnect by remember { mutableStateOf(true) }
+    var serverIp     by remember { mutableStateOf(prefs.getString("server_ip", "10.40.194.37") ?: "10.40.194.37") }
+    var port         by remember { mutableStateOf(prefs.getString("port", "24800") ?: "24800") }
+    var clientName   by remember { mutableStateOf(prefs.getString("client_name", "AndroidClient") ?: "AndroidClient") }
+    var autoReconnect by remember { mutableStateOf(prefs.getBoolean("auto_reconnect", true)) }
 
     // ── Connection state ───────────────────────────────────────────────────
     var connectionStatus by remember { mutableStateOf("Disconnected") }
@@ -86,8 +88,38 @@ fun MainScreen(
         onDispose { networkService?.stop() }
     }
 
+    // Save settings helper
+    fun saveSettings() {
+        prefs.edit().apply {
+            putString("server_ip", serverIp)
+            putString("port", port)
+            putString("client_name", clientName)
+            putBoolean("auto_reconnect", autoReconnect)
+            apply()
+        }
+    }
+
+    // ── mDNS Auto Discovery ────────────────────────────────────────────────
+    LaunchedEffect(Unit) {
+        val discovery = com.example.synergyclient.network.SynergyServerDiscovery(context) { host, p ->
+            scope.launch {
+                addLog("Auto-discovered server at $host:$p")
+                serverIp = host
+                port = p.toString()
+                saveSettings()
+            }
+        }
+        discovery.start()
+        try {
+            kotlinx.coroutines.awaitCancellation()
+        } finally {
+            discovery.stop()
+        }
+    }
+
     // ── Connect / Disconnect logic ─────────────────────────────────────────
     fun connect() {
+        saveSettings()
         // Always stop any existing service first to prevent duplicate connections
         networkService?.stop()
         networkService = null

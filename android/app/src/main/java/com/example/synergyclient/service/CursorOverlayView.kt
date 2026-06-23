@@ -12,7 +12,7 @@ import android.view.View
 class CursorOverlayView(context: Context) : View(context) {
 
     companion object {
-        private const val SIZE = 48f
+        private const val SIZE = 32f
     }
 
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -22,9 +22,9 @@ class CursorOverlayView(context: Context) : View(context) {
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLACK
         style = Paint.Style.STROKE
-        strokeWidth = 3.0f
-        strokeJoin = Paint.Join.ROUND
-        strokeCap = Paint.Cap.ROUND
+        strokeWidth = 2.5f
+        strokeJoin = Paint.Join.MITER
+        strokeCap = Paint.Cap.SQUARE
     }
     private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.argb(100, 0, 0, 0)
@@ -51,7 +51,7 @@ class CursorOverlayView(context: Context) : View(context) {
             lineTo(s * 0.72f, s * 0.64f)
             close()
         }
-        shadowPath.addPath(arrowPath, 3.0f, 3.0f)
+        shadowPath.addPath(arrowPath, 2.5f, 2.5f)
     }
 
     override fun onDraw(canvas: Canvas) {

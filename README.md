@@ -106,6 +106,16 @@ Deskflow/Synergy supports Android as a client (allowing you to control your Andr
 3. Install the generated `.apk` on your Android device.
 4. Open the app on Android, type in your Windows PC's local IP address, and press **Connect**.
 
+### 💻 System Compatibility & Testing
+This client has been optimized and verified to work across the following environments:
+- **Android Client Devices:**
+  - **Xiaomi Mi Pad 5** (MIUI Tablet)
+  - **Samsung Galaxy Tab A9+** (One UI Tablet)
+- **Host / Server Operating Systems:**
+  - **macOS**
+  - **Windows 11**
+  - **Windows 10**
+
 ---
 
 ## 📄 License & Upstream Contribution

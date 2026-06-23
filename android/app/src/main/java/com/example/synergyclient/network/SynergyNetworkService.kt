@@ -110,6 +110,7 @@ class SynergyNetworkService(
             } finally {
                 outputStream = null
                 logFlusher?.cancel()
+                com.example.synergyclient.service.SynergyAccessibilityService.instance?.showKeyboard()
                 try { socket?.close() } catch (_: Exception) {}
                 socket = null
                 job?.cancel()
