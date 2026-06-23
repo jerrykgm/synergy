@@ -193,6 +193,12 @@ class SynergyAccessibilityService : AccessibilityService() {
         val cx = cursorX.toFloat()
         val cy = cursorY.toFloat()
 
+        // Intercept top edge clicks to open notification menu (global action)
+        if (cy <= 25) {
+            performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+            return
+        }
+
         // Reuse pre-allocated path
         clickPath.reset()
         clickPath.moveTo(cx, cy)
