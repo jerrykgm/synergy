@@ -4,6 +4,7 @@ import android.os.Process
 import android.util.Log
 import android.view.WindowManager
 import android.content.Context
+import android.accessibilityservice.AccessibilityService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -275,7 +276,15 @@ class SynergyNetworkService(
             c2 == 'D'.code.toByte() && c3 == 'N'.code.toByte()) {
             if (len >= 5) {
                 val btn = buf[4].toInt() and 0xFF
-                if (btn == 1) svc?.handleMouseDown()
+                if (btn == 1) {
+                    svc?.handleMouseDown()
+                } else if (btn == 2) {
+                    // Right Click -> Back Action
+                    svc?.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                } else if (btn == 3) {
+                    // Middle Click -> Home Action
+                    svc?.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                }
             }
             return
         }
