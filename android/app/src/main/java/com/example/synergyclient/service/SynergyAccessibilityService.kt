@@ -78,6 +78,11 @@ class SynergyAccessibilityService : AccessibilityService() {
 
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
             try {
+                val info = serviceInfo
+                info.flags = info.flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_REQUEST_ENHANCED_WEB_ACCESSIBILITY
+                serviceInfo = info
+            } catch (_: Exception) {}
+            try {
                 softKeyboardController.addOnShowModeChangedListener { controller, mode ->
                     if (isSynergyActive && mode != SHOW_MODE_HIDDEN) {
                         mainHandler.post {
@@ -322,7 +327,7 @@ class SynergyAccessibilityService : AccessibilityService() {
 
             // Use cached value — no SharedPreferences I/O on hot path
             val ctrl = if (cachedMacServerMode) {
-                isCmd || isCtrl
+                isCmd || isCtrl || isAlt
             } else {
                 isCtrl || isAlt
             }
@@ -465,7 +470,7 @@ class SynergyAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow
         if (root != null) {
             val node = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-            if (node != null && node.isEditable) return node
+            if (node != null) return node
             val manual = findFocusedEditableNode(root)
             if (manual != null) {
                 root.recycle()
@@ -478,7 +483,7 @@ class SynergyAccessibilityService : AccessibilityService() {
             for (win in windows) {
                 val wRoot = win.root ?: continue
                 val node = wRoot.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-                if (node != null && node.isEditable) {
+                if (node != null) {
                     wRoot.recycle()
                     return node
                 }
@@ -494,7 +499,11 @@ class SynergyAccessibilityService : AccessibilityService() {
     }
 
     private fun findFocusedEditableNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        if (node.isFocused && node.isEditable) return AccessibilityNodeInfo.obtain(node)
+        // If it's focused and either marked editable or matches an input class name/role
+        val isInputClass = node.className?.contains("EditText", ignoreCase = true) == true ||
+                           node.className?.contains("WebView", ignoreCase = true) == true ||
+                           node.isEditable
+        if (node.isFocused && (isInputClass || node.text != null)) return AccessibilityNodeInfo.obtain(node)
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             val found = findFocusedEditableNode(child)

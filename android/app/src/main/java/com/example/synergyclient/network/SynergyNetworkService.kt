@@ -401,6 +401,26 @@ class SynergyNetworkService(
                 }
             }
 
+            "DAPP" -> {
+                // Drag & Drop App state payload (custom command: DAPP)
+                // Format: 4 bytes URL string length + URL (UTF-8)
+                if (payload.size >= 4) {
+                    val urlLen = read32(payload, 0)
+                    if (payload.size >= 4 + urlLen) {
+                        val urlStr = String(payload, 4, urlLen, StandardCharsets.UTF_8)
+                        log("← DAPP drag & drop app state URL: '$urlStr'")
+                        try {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(urlStr)).apply {
+                                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            log("Failed to launch DAPP URL intent: ${e.message}")
+                        }
+                    }
+                }
+            }
+
             "CCLP" -> log("← CCLP (server has clipboard)")
 
             "CBYE" -> throw Exception("Server closed connection (CBYE)")

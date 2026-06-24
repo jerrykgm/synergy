@@ -91,21 +91,6 @@ fun MainScreen(
     var loggingEnabled by remember { mutableStateOf(prefs.getBoolean("logging_enabled", false)) }
     var isMacServerMode by remember { mutableStateOf(prefs.getBoolean("mac_server_mode", false)) }
 
-    // ── Connection state ───────────────────────────────────────────────────
-    var connectionStatus by remember { mutableStateOf("Disconnected") }
-    val isConnected  = connectionStatus == "Connected"
-    val isConnecting = connectionStatus == "Connecting..."
-
-    // ── Services ───────────────────────────────────────────────────────────
-    var networkService by remember { mutableStateOf<SynergyNetworkService?>(null) }
-    var isAccessibilityEnabled by remember { mutableStateOf(false) }
-
-    // ── Discovery engine (singleton per composition) ───────────────────────
-    val discovery = remember { SynergyServerDiscovery() }
-    val discoveredServers by discovery.allServers.collectAsState()
-    var showScanPanel by remember { mutableStateOf(false) }
-    var isScanningAnim by remember { mutableStateOf(false) }
-
     // ── Log ring buffer ────────────────────────────────────────────────────
     val logs      = remember { mutableStateListOf<String>() }
     val listState = rememberLazyListState()
@@ -118,12 +103,52 @@ fun MainScreen(
         }
     }
 
+    // ── Foreground Service Connection ──────────────────────────────────────
+    var foregroundService by remember { mutableStateOf<com.example.synergyclient.network.SynergyForegroundService?>(null) }
+    var connectionStatus by remember { mutableStateOf("Disconnected") }
+
+    val serviceConnection = remember {
+        object : android.content.ServiceConnection {
+            override fun onServiceConnected(name: android.content.ComponentName?, service: android.os.IBinder?) {
+                val binder = service as? com.example.synergyclient.network.SynergyForegroundService.LocalBinder
+                val svcInstance = binder?.getService()
+                foregroundService = svcInstance
+                svcInstance?.setListeners(
+                    onStatusChange = { connectionStatus = it },
+                    onLog = { msg -> addLog(msg) }
+                )
+            }
+
+            override fun onServiceDisconnected(name: android.content.ComponentName?) {
+                foregroundService?.removeListeners()
+                foregroundService = null
+            }
+        }
+    }
+
+    // Monitor background service instance if it is already running
+    LaunchedEffect(Unit) {
+        val intent = android.content.Intent(context, com.example.synergyclient.network.SynergyForegroundService::class.java)
+        context.bindService(intent, serviceConnection, android.content.Context.BIND_AUTO_CREATE)
+    }
+
+    val isConnected  = connectionStatus == "Connected"
+    val isConnecting = connectionStatus == "Connecting..."
+
+    var isAccessibilityEnabled by remember { mutableStateOf(false) }
+
+    // ── Discovery engine (singleton per composition) ───────────────────────
+    val discovery = remember { SynergyServerDiscovery() }
+    val discoveredServers by discovery.allServers.collectAsState()
+    var showScanPanel by remember { mutableStateOf(false) }
+    var isScanningAnim by remember { mutableStateOf(false) }
+
     // ── Start discovery when composition enters, stop when it leaves ───────
     DisposableEffect(Unit) {
         discovery.start()
         onDispose {
             discovery.stop()
-            networkService?.stop()
+            try { context.unbindService(serviceConnection) } catch (_: Exception) {}
         }
     }
 
@@ -175,40 +200,34 @@ fun MainScreen(
     // ── Connect / Disconnect ───────────────────────────────────────────────
     fun connect() {
         saveSettings()
-        networkService?.stop()
-        networkService = null
-        connectionStatus = "Connecting..."
+        
+        // Dynamically request notification permissions on Android 13+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            val permission = android.Manifest.permission.POST_NOTIFICATIONS
+            if (androidx.core.content.ContextCompat.checkSelfPermission(context, permission) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                (context as? android.app.Activity)?.requestPermissions(arrayOf(permission), 101)
+            }
+        }
 
         val portNum = port.toIntOrNull() ?: 24800
-        val svc = SynergyNetworkService(
-            host          = serverIp,
-            port          = portNum,
-            clientName    = clientName,
-            context       = context,
-            loggingEnabled = loggingEnabled,
-            onLog         = { msg -> addLog(msg) },
-            onStatusChange = { serviceInstance, status ->
-                if (networkService === serviceInstance) {
-                    connectionStatus = status
-                    if (status == "Disconnected" && autoReconnect) {
-                        scope.launch {
-                            delay(3000)
-                            if (connectionStatus == "Disconnected" && networkService === serviceInstance) {
-                                addLog("⟳ Auto-reconnecting...")
-                                connect()
-                            }
-                        }
-                    }
-                }
-            }
-        )
-        networkService = svc
-        svc.start()
+        val serviceIntent = android.content.Intent(context, com.example.synergyclient.network.SynergyForegroundService::class.java).apply {
+            action = com.example.synergyclient.network.SynergyForegroundService.ACTION_START
+            putExtra(com.example.synergyclient.network.SynergyForegroundService.EXTRA_HOST, serverIp)
+            putExtra(com.example.synergyclient.network.SynergyForegroundService.EXTRA_PORT, portNum)
+            putExtra(com.example.synergyclient.network.SynergyForegroundService.EXTRA_CLIENT_NAME, clientName)
+            putExtra(com.example.synergyclient.network.SynergyForegroundService.EXTRA_LOGGING, loggingEnabled)
+        }
+        
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            context.startForegroundService(serviceIntent)
+        } else {
+            context.startService(serviceIntent)
+        }
+        connectionStatus = "Connecting..."
     }
 
     fun disconnect() {
-        networkService?.stop()
-        networkService = null
+        foregroundService?.stopServiceAndConnection()
     }
 
     fun selectServer(server: DiscoveredServer) {
