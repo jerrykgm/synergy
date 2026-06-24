@@ -127,14 +127,19 @@ fun MainScreen(
         }
     }
 
-    // Monitor background service instance if it is already running
+    // Start the persistent service (no-op if already running), then bind for status
     LaunchedEffect(Unit) {
         val intent = android.content.Intent(context, com.example.synergyclient.network.SynergyForegroundService::class.java)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            context.startForegroundService(intent)
+        } else {
+            context.startService(intent)
+        }
         context.bindService(intent, serviceConnection, android.content.Context.BIND_AUTO_CREATE)
     }
 
     val isConnected  = connectionStatus == "Connected"
-    val isConnecting = connectionStatus == "Connecting..."
+    val isConnecting = connectionStatus == "Connecting…" || connectionStatus == "Connecting..."
 
     var isAccessibilityEnabled by remember { mutableStateOf(false) }
 

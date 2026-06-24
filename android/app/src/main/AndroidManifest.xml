@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:allowBackup="true"
@@ -14,6 +15,7 @@
         android:supportsRtl="true"
         android:windowSoftInputMode="adjustResize"
         android:theme="@style/Theme.SynergyClient">
+
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -23,6 +25,7 @@
             </intent-filter>
         </activity>
 
+        <!-- Accessibility service for cursor/keyboard injection -->
         <service
             android:name=".service.SynergyAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
@@ -35,10 +38,24 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+        <!-- Persistent background connection service -->
         <service
             android:name=".network.SynergyForegroundService"
             android:foregroundServiceType="specialUse"
             android:exported="false" />
+
+        <!-- Auto-start on device boot -->
+        <receiver
+            android:name=".network.BootReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>
