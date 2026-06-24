@@ -298,7 +298,7 @@ private fun AppHeader(connectionStatus: String) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text("SYNERGY", fontSize = 22.sp, fontWeight = FontWeight.Bold,
+            Text("FLOWPORT", fontSize = 22.sp, fontWeight = FontWeight.Bold,
                 color = TextCol, letterSpacing = 3.sp)
             Text("Android Client  •  v1.0", fontSize = 12.sp, color = Muted)
         }
@@ -414,7 +414,7 @@ private fun ScanPanel(
                     Text("Network Scan", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextCol)
                     Text(
                         text = when {
-                            discoveredServers.isEmpty() -> "Scanning for Synergy servers..."
+                            discoveredServers.isEmpty() -> "Scanning for Flowport servers..."
                             discoveredServers.size == 1 -> "1 server found"
                             else                        -> "${discoveredServers.size} servers found"
                         },
