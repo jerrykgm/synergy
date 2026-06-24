@@ -325,36 +325,217 @@ class SynergyAccessibilityService : AccessibilityService() {
             val isAlt   = (modifiers and 0x0004) != 0
             val isCmd   = (modifiers and 0x0008) != 0
 
-            // Use cached value — no SharedPreferences I/O on hot path
-            val ctrl = if (cachedMacServerMode) {
-                isCmd || isCtrl || isAlt
-            } else {
-                isCtrl || isAlt
-            }
+            // ── Mac Cmd / PC Ctrl shortcut dispatch ───────────────────────
+            val hasModifier = if (cachedMacServerMode) (isCmd || isCtrl) else isCtrl
 
-            if (ctrl) {
+            if (hasModifier) {
                 val lower = if (keyId in 0x41..0x5A) keyId + 32 else keyId
                 when (lower) {
-                    0x63 -> nodeAction(AccessibilityNodeInfo.ACTION_COPY)
-                    0x76 -> nodeAction(AccessibilityNodeInfo.ACTION_PASTE)
-                    0x78 -> nodeAction(AccessibilityNodeInfo.ACTION_CUT)
-                    0x61 -> nodeAction(AccessibilityNodeInfo.ACTION_SELECT)
+                    // ── Standard editing ──────────────────────────────────
+                    0x63 -> { nodeAction(AccessibilityNodeInfo.ACTION_COPY);  return@post }
+                    0x76 -> { nodeAction(AccessibilityNodeInfo.ACTION_PASTE); return@post }
+                    0x78 -> { nodeAction(AccessibilityNodeInfo.ACTION_CUT);   return@post }
+                    0x61 -> { nodeAction(AccessibilityNodeInfo.ACTION_SELECT); return@post }
+
+                    // ── Undo / Redo ───────────────────────────────────────
+                    0x7A -> {
+                        if (isShift) {
+                            // Cmd+Shift+Z → Redo (action ID 0x00100000 on API 26+)
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                focusedEditable()?.let { node ->
+                                    node.performAction(0x00100000) // ACTION_REDO
+                                    node.recycle()
+                                }
+                            }
+                        } else {
+                            // Cmd+Z → Undo (action ID 0x00080000 on API 26+)
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                focusedEditable()?.let { node ->
+                                    node.performAction(0x00080000) // ACTION_UNDO
+                                    node.recycle()
+                                }
+                            }
+                        }
+                        return@post
+                    }
+
+                    // ── Navigation / Window shortcuts ─────────────────────
+                    0x77 -> { performGlobalAction(GLOBAL_ACTION_RECENTS); return@post }        // Cmd+W → recents
+                    0x68 -> { performGlobalAction(GLOBAL_ACTION_HOME); return@post }            // Cmd+H → home
+                    0x20 -> { performGlobalAction(GLOBAL_ACTION_HOME); return@post }            // Cmd+Space → home/launcher
+
+                    // ── Arrow key navigation with Cmd ─────────────────────
+                    0xFF51, 0xFF53, 0xFF52, 0xFF54 -> {
+                        // Cmd+Left/Right/Up/Down → beginning/end of line/document
+                        val args = Bundle()
+                        val moveGranularity: Int
+                        val direction: Int
+                        when (lower) {
+                            0xFF51 -> { moveGranularity = AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE;      direction = 0 } // Left  → line start
+                            0xFF53 -> { moveGranularity = AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE;      direction = 1 } // Right → line end
+                            0xFF52 -> { moveGranularity = AccessibilityNodeInfo.MOVEMENT_GRANULARITY_PARAGRAPH; direction = 0 } // Up    → paragraph start
+                            else   -> { moveGranularity = AccessibilityNodeInfo.MOVEMENT_GRANULARITY_PARAGRAPH; direction = 1 } // Down  → paragraph end
+                        }
+                        args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT, moveGranularity)
+                        args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
+                        focusedEditable()?.let { node ->
+                            val action = if (direction == 0)
+                                AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY
+                            else
+                                AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY
+                            node.performAction(action, args)
+                            node.recycle()
+                        }
+                        return@post
+                    }
                 }
+                // For any other Ctrl/Cmd combo not explicitly handled — swallow silently
                 return@post
             }
 
+            // ── Alt / Option modifier (word navigation on Mac) ────────────
+            if (isAlt) {
+                val args = Bundle()
+                args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                    AccessibilityNodeInfo.MOVEMENT_GRANULARITY_WORD)
+                args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
+                when (keyId) {
+                    0xFF51 -> { // Alt+Left → previous word
+                        focusedEditable()?.let { node ->
+                            node.performAction(AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY, args)
+                            node.recycle()
+                        }
+                        return@post
+                    }
+                    0xFF53 -> { // Alt+Right → next word
+                        focusedEditable()?.let { node ->
+                            node.performAction(AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY, args)
+                            node.recycle()
+                        }
+                        return@post
+                    }
+                    0xFF08, 0xEF08 -> { // Alt+Backspace → delete word
+                        val charArgs = Bundle()
+                        charArgs.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                            AccessibilityNodeInfo.MOVEMENT_GRANULARITY_WORD)
+                        charArgs.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, true)
+                        focusedEditable()?.let { node ->
+                            node.performAction(AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY, charArgs)
+                            node.performAction(AccessibilityNodeInfo.ACTION_CUT)
+                            node.recycle()
+                        }
+                        return@post
+                    }
+                }
+                // Fall through for regular Alt combos that produce printable chars
+            }
+
             when (keyId) {
-                0xFF08, 0xEF08, 0x0008      -> deleteLastChar()
-                0xFF0D, 0xFF8D, 0xEF0D, 0xEF8D, 0x000D, 0x000A -> triggerEnterKey()
-                0xFF09, 0x0009              -> insertChar('\t')
-                0xFF1B, 0x001B              -> performGlobalAction(GLOBAL_ACTION_BACK)
-                0xFFFF, 0xFF9F, 0xEF9F      -> deleteForwardChar()
-                in 0xFF50..0xFFFF           -> { /* navigation/function keys */ }
+                // ── Standard control chars ────────────────────────────────
+                0xFF08, 0xEF08, 0x0008               -> deleteLastChar()
+                0xFF0D, 0xFF8D, 0xEF0D, 0xEF8D,
+                0x000D, 0x000A                        -> triggerEnterKey()
+                0xFF09, 0x0009                        -> insertChar('\t')
+                0xFF1B, 0x001B                        -> performGlobalAction(GLOBAL_ACTION_BACK)
+                0xFFFF, 0xFF9F, 0xEF9F               -> deleteForwardChar()
+
+                // ── Arrow keys (bare, no modifier) ───────────────────────
+                0xFF51 -> { // Left
+                    val args = Bundle()
+                    args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                        AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER)
+                    args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
+                    focusedEditable()?.let { node ->
+                        node.performAction(AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY, args)
+                        node.recycle()
+                    }
+                }
+                0xFF53 -> { // Right
+                    val args = Bundle()
+                    args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                        AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER)
+                    args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
+                    focusedEditable()?.let { node ->
+                        node.performAction(AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY, args)
+                        node.recycle()
+                    }
+                }
+                0xFF52 -> { // Up
+                    val args = Bundle()
+                    args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                        AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE)
+                    args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
+                    focusedEditable()?.let { node ->
+                        node.performAction(AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY, args)
+                        node.recycle()
+                    }
+                }
+                0xFF54 -> { // Down
+                    val args = Bundle()
+                    args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                        AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE)
+                    args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
+                    focusedEditable()?.let { node ->
+                        node.performAction(AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY, args)
+                        node.recycle()
+                    }
+                }
+
+                // ── Home / End keys ───────────────────────────────────────
+                0xFF50, 0xEF50 -> { // Home → line start
+                    val args = Bundle()
+                    args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                        AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE)
+                    args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
+                    focusedEditable()?.let { node ->
+                        node.performAction(AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY, args)
+                        node.recycle()
+                    }
+                }
+                0xFF57, 0xEF57 -> { // End → line end
+                    val args = Bundle()
+                    args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                        AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE)
+                    args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
+                    focusedEditable()?.let { node ->
+                        node.performAction(AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY, args)
+                        node.recycle()
+                    }
+                }
+
+                // ── Page Up / Page Down ───────────────────────────────────
+                0xFF55, 0xEF55 -> { // Page Up → scroll gesture
+                    val sw = screenW().toFloat()
+                    val sh = screenH().toFloat()
+                    val p = Path().apply { moveTo(sw / 2, sh * 0.25f); lineTo(sw / 2, sh * 0.75f) }
+                    dispatchGesture(GestureDescription.Builder()
+                        .addStroke(GestureDescription.StrokeDescription(p, 0, 100)).build(), null, null)
+                }
+                0xFF56, 0xEF56 -> { // Page Down → scroll gesture
+                    val sw = screenW().toFloat()
+                    val sh = screenH().toFloat()
+                    val p = Path().apply { moveTo(sw / 2, sh * 0.75f); lineTo(sw / 2, sh * 0.25f) }
+                    dispatchGesture(GestureDescription.Builder()
+                        .addStroke(GestureDescription.StrokeDescription(p, 0, 100)).build(), null, null)
+                }
+
+                // ── Function keys ─────────────────────────────────────────
+                0xFFBE -> performGlobalAction(GLOBAL_ACTION_BACK)                // F1
+                0xFFBF -> performGlobalAction(GLOBAL_ACTION_HOME)                // F2
+                0xFFC0 -> performGlobalAction(GLOBAL_ACTION_RECENTS)             // F3
+                0xFFC1 -> performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)       // F4
+                0xFFC2 -> performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)      // F5
+                // F6–F12 silently ignored (no Android equivalent)
+                in 0xFFC3..0xFFC9 -> { /* F7-F12 no-op */ }
+
+                // ── Printable ASCII ───────────────────────────────────────
                 in 0x20..0x7E -> {
                     val ch = if (isShift && keyId in 0x61..0x7A)
                         (keyId - 32).toChar() else keyId.toChar()
                     insertChar(ch)
                 }
+
+                // ── Unicode beyond ASCII ──────────────────────────────────
                 in 0x00A0..0x10FFFF -> {
                     val s = if (keyId <= 0xFFFF) keyId.toChar().toString()
                     else String(Character.toChars(keyId))
