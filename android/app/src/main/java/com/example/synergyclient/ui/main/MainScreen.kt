@@ -190,6 +190,16 @@ fun MainScreen(
         if (logs.isNotEmpty()) listState.animateScrollToItem(logs.size - 1)
     }
 
+    // ── Auto-hide to background when connected ────────────────────────────
+    val activity = context as? android.app.Activity
+    LaunchedEffect(connectionStatus) {
+        if (connectionStatus == "Connected") {
+            // Short delay so the user sees the "Connected" state, then hide
+            delay(800)
+            activity?.moveTaskToBack(true)
+        }
+    }
+
     // ── Settings persist helper ────────────────────────────────────────────
     fun saveSettings() {
         prefs.edit().apply {
