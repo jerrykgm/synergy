@@ -38,6 +38,7 @@ class SynergyNetworkService(
     private val clientName:     String,
     private val context:        Context,
     private val loggingEnabled: Boolean,
+    private val clipboardEnabled: Boolean = true,
     private val onLog:          (String) -> Unit,
     private val onStatusChange: (SynergyNetworkService, String) -> Unit
 ) {
@@ -357,7 +358,7 @@ class SynergyNetworkService(
 
             "DCLP" -> {
                 // Clipboard data
-                if (payload.size >= 6) {
+                if (clipboardEnabled && payload.size >= 6) {
                     val mark = payload[5].toInt() and 0xFF
                     if (mark == 1 || mark == 3) {
                         // Text clipboard

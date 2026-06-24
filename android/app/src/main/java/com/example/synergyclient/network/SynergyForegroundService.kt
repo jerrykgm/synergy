@@ -28,6 +28,7 @@ class SynergyForegroundService : Service() {
         const val EXTRA_PORT = "EXTRA_PORT"
         const val EXTRA_CLIENT_NAME = "EXTRA_CLIENT_NAME"
         const val EXTRA_LOGGING = "EXTRA_LOGGING"
+        const val EXTRA_CLIPBOARD = "EXTRA_CLIPBOARD"
 
         @Volatile
         var instance: SynergyForegroundService? = null
@@ -70,9 +71,10 @@ class SynergyForegroundService : Service() {
             val port = intent.getIntExtra(EXTRA_PORT, 24800)
             val clientName = intent.getStringExtra(EXTRA_CLIENT_NAME) ?: "AndroidClient"
             val logging = intent.getBooleanExtra(EXTRA_LOGGING, false)
+            val clipboardEnabled = intent.getBooleanExtra(EXTRA_CLIPBOARD, true)
 
             startForegroundNotification(host, port)
-            startConnection(host, port, clientName, logging)
+            startConnection(host, port, clientName, logging, clipboardEnabled)
         }
 
         return START_STICKY
@@ -103,7 +105,7 @@ class SynergyForegroundService : Service() {
         startForeground(NOTIFICATION_ID, notification)
     }
 
-    private fun startConnection(host: String, port: Int, clientName: String, logging: Boolean) {
+    private fun startConnection(host: String, port: Int, clientName: String, logging: Boolean, clipboardEnabled: Boolean) {
         networkService?.stop()
         val svc = SynergyNetworkService(
             host = host,
@@ -111,6 +113,7 @@ class SynergyForegroundService : Service() {
             clientName = clientName,
             context = this,
             loggingEnabled = logging,
+            clipboardEnabled = clipboardEnabled,
             onLog = { msg ->
                 onLogListener?.invoke(msg)
             },

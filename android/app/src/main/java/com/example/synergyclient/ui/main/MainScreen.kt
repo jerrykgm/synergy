@@ -90,6 +90,7 @@ fun MainScreen(
     var autoReconnect by remember { mutableStateOf(prefs.getBoolean("auto_reconnect", true)) }
     var loggingEnabled by remember { mutableStateOf(prefs.getBoolean("logging_enabled", false)) }
     var isMacServerMode by remember { mutableStateOf(prefs.getBoolean("mac_server_mode", false)) }
+    var clipboardSyncEnabled by remember { mutableStateOf(prefs.getBoolean("clipboard_sync", true)) }
 
     // ── Log ring buffer ────────────────────────────────────────────────────
     val logs      = remember { mutableStateListOf<String>() }
@@ -193,6 +194,7 @@ fun MainScreen(
             putBoolean("auto_reconnect",    autoReconnect)
             putBoolean("logging_enabled",   loggingEnabled)
             putBoolean("mac_server_mode",   isMacServerMode)
+            putBoolean("clipboard_sync",    clipboardSyncEnabled)
             apply()
         }
     }
@@ -216,6 +218,7 @@ fun MainScreen(
             putExtra(com.example.synergyclient.network.SynergyForegroundService.EXTRA_PORT, portNum)
             putExtra(com.example.synergyclient.network.SynergyForegroundService.EXTRA_CLIENT_NAME, clientName)
             putExtra(com.example.synergyclient.network.SynergyForegroundService.EXTRA_LOGGING, loggingEnabled)
+            putExtra(com.example.synergyclient.network.SynergyForegroundService.EXTRA_CLIPBOARD, clipboardSyncEnabled)
         }
         
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -285,6 +288,7 @@ fun MainScreen(
             autoReconnect   = autoReconnect,
             loggingEnabled  = loggingEnabled,
             isMacServerMode = isMacServerMode,
+            clipboardSyncEnabled = clipboardSyncEnabled,
             isConnected     = isConnected,
             isConnecting    = isConnecting,
             onServerIpChange     = { serverIp = it },
@@ -293,6 +297,7 @@ fun MainScreen(
             onAutoReconnectChange = { autoReconnect = it },
             onLoggingChange      = { loggingEnabled = it },
             onMacModeChange      = { isMacServerMode = it },
+            onClipboardSyncChange = { clipboardSyncEnabled = it },
             onConnectClick       = { if (isConnected || isConnecting) disconnect() else connect() }
         )
 
@@ -555,6 +560,7 @@ private fun ConnectionCard(
     autoReconnect:   Boolean,
     loggingEnabled:  Boolean,
     isMacServerMode: Boolean,
+    clipboardSyncEnabled: Boolean,
     isConnected:     Boolean,
     isConnecting:    Boolean,
     onServerIpChange:      (String)  -> Unit,
@@ -563,6 +569,7 @@ private fun ConnectionCard(
     onAutoReconnectChange: (Boolean) -> Unit,
     onLoggingChange:       (Boolean) -> Unit,
     onMacModeChange:       (Boolean) -> Unit,
+    onClipboardSyncChange: (Boolean) -> Unit,
     onConnectClick:        () -> Unit,
 ) {
     Surface(
@@ -623,6 +630,7 @@ private fun ConnectionCard(
             ToggleRow("Connection Logs", "Disable logs for faster communication", loggingEnabled,  onLoggingChange)
             ToggleRow("Mac Server Mode", "Maps ⌘+C/V → Ctrl+C/V on this device", isMacServerMode, onMacModeChange,
                 highlightColor = Accent)
+            ToggleRow("Sync Clipboard",  "Sync clipboard copy-pastes between devices", clipboardSyncEnabled, onClipboardSyncChange)
 
             val btnGradient = if (isConnected)
                 Brush.horizontalGradient(listOf(Red, Color(0xFFC0392B)))
