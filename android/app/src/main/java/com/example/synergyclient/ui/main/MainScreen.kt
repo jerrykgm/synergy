@@ -217,11 +217,14 @@ fun MainScreen(
         if (!isConnected && !isConnecting) connect()
     }
 
+    val scrollState = rememberScrollState()
+
     // ── Root layout ────────────────────────────────────────────────────────
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(Bg)
+            .verticalScroll(scrollState)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
