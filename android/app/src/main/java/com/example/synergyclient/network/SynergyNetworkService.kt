@@ -275,14 +275,18 @@ class SynergyNetworkService(
             c2 == 'D'.code.toByte() && c3 == 'N'.code.toByte()) {
             if (len >= 5) {
                 val btn = buf[4].toInt() and 0xFF
-                if (btn == 1) svc?.clickCursor()
+                if (btn == 1) svc?.handleMouseDown()
             }
             return
         }
 
-        // ── Mouse button up (DMUP) — no action ────────────────────────────
+        // ── Mouse button up (DMUP) ─────────────────────────────────────────
         if (c0 == 'D'.code.toByte() && c1 == 'M'.code.toByte() &&
             c2 == 'U'.code.toByte() && c3 == 'P'.code.toByte()) {
+            if (len >= 5) {
+                val btn = buf[4].toInt() and 0xFF
+                if (btn == 1) svc?.handleMouseUp()
+            }
             return
         }
 

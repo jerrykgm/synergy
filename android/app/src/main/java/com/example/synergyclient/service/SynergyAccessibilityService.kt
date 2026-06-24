@@ -185,42 +185,79 @@ class SynergyAccessibilityService : AccessibilityService() {
 
     fun moveCursorRelative(dx: Int, dy: Int) = updateCursor(cursorX + dx, cursorY + dy)
 
-    fun clickCursor() {
-        val now = System.currentTimeMillis()
-        val isDoubleClick = (now - lastClickTime) < 400
-        lastClickTime = now
+    // ── Drag and click gesture state ──────────────────────────────────────
+    private var isMouseDown = false
+    private var dragStartX = 0f
+    private var dragStartY = 0f
+    private var dragStartTime = 0L
+    private val dragPath = Path()
 
+    fun handleMouseDown() {
         val cx = cursorX.toFloat()
         val cy = cursorY.toFloat()
+        dragStartX = cx
+        dragStartY = cy
+        dragStartTime = System.currentTimeMillis()
+        isMouseDown = true
+    }
 
-        // Intercept top edge clicks to open notification menu (global action)
-        if (cy <= 100) {
-            android.util.Log.i("SynergyApp", "Top-edge click detected at cy=$cy. Triggering GLOBAL_ACTION_NOTIFICATIONS")
-            performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+    fun handleMouseUp() {
+        if (!isMouseDown) return
+        isMouseDown = false
+        val cx = cursorX.toFloat()
+        val cy = cursorY.toFloat()
+        val duration = (System.currentTimeMillis() - dragStartTime).coerceAtLeast(10L)
+        
+        if (Math.abs(cx - dragStartX) < 10 && Math.abs(cy - dragStartY) < 10 && duration < 300) {
+            // Treat as a standard click
+            val now = System.currentTimeMillis()
+            val isDoubleClick = (now - lastClickTime) < 400
+            lastClickTime = now
+
+            clickPath.reset()
+            clickPath.moveTo(cx, cy)
+
+            if (isDoubleClick) {
+                val stroke1 = GestureDescription.StrokeDescription(clickPath, 0,  1)
+                val stroke2 = GestureDescription.StrokeDescription(clickPath, 40, 1)
+                dispatchGesture(
+                    GestureDescription.Builder()
+                        .addStroke(stroke1)
+                        .addStroke(stroke2)
+                        .build(), null, null
+                )
+                lastClickTime = 0L
+            } else {
+                dispatchGesture(
+                    GestureDescription.Builder()
+                        .addStroke(GestureDescription.StrokeDescription(clickPath, 0, 1))
+                        .build(), null, null
+                )
+            }
+        } else {
+            // Drag gesture: dispatch a swipe gesture matching the path
+            dragPath.reset()
+            dragPath.moveTo(dragStartX, dragStartY)
+            dragPath.lineTo(cx, cy)
+            dispatchGesture(
+                GestureDescription.Builder()
+                    .addStroke(GestureDescription.StrokeDescription(dragPath, 0, duration))
+                    .build(), null, null
+            )
         }
+    }
 
-        // Reuse pre-allocated path
+    fun clickCursor() {
+        // Fallback or deprecated if server uses legacy clicks
+        val cx = cursorX.toFloat()
+        val cy = cursorY.toFloat()
         clickPath.reset()
         clickPath.moveTo(cx, cy)
-
-        if (isDoubleClick) {
-            // Two taps with 40ms gap — minimum duration (1ms) for lowest latency
-            val stroke1 = GestureDescription.StrokeDescription(clickPath, 0,  1)
-            val stroke2 = GestureDescription.StrokeDescription(clickPath, 40, 1)
-            dispatchGesture(
-                GestureDescription.Builder()
-                    .addStroke(stroke1)
-                    .addStroke(stroke2)
-                    .build(), null, null
-            )
-            lastClickTime = 0L  // prevent triple-tap
-        } else {
-            dispatchGesture(
-                GestureDescription.Builder()
-                    .addStroke(GestureDescription.StrokeDescription(clickPath, 0, 1))
-                    .build(), null, null
-            )
-        }
+        dispatchGesture(
+            GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(clickPath, 0, 1))
+                .build(), null, null
+        )
     }
 
     fun scroll(dx: Int, dy: Int) {
