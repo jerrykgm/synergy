@@ -7,6 +7,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.*
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -508,6 +509,8 @@ class SynergyAccessibilityService : AccessibilityService() {
 
     // ── Clipboard ─────────────────────────────────────────────────────────
 
+    // ── Clipboard & File Drag Drop ─────────────────────────────────────────
+
     fun setClipboard(text: String) {
         mainHandler.post {
             try {
@@ -516,8 +519,63 @@ class SynergyAccessibilityService : AccessibilityService() {
                     return@post
                 }
                 val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                cm.setPrimaryClip(ClipData.newPlainText("Synergy", text))
+                cm.setPrimaryClip(ClipData.newPlainText("Flowport", text))
             } catch (_: Exception) {}
+        }
+    }
+
+    fun setClipboardImage(imageBytes: ByteArray) {
+        mainHandler.post {
+            try {
+                val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size) ?: return@post
+                val filename = "flowport_clip_${System.currentTimeMillis()}.png"
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, filename)
+                    put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Flowport")
+                }
+                val resolver = contentResolver
+                val uri = resolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                if (uri != null) {
+                    resolver.openOutputStream(uri)?.use { out ->
+                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    }
+                    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = ClipData.newUri(resolver, "Flowport Image", uri)
+                    cm.setPrimaryClip(clip)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("Flowport", "Failed to copy image to clipboard", e)
+            }
+        }
+    }
+
+    fun saveSharedFile(filename: String, fileBytes: ByteArray) {
+        mainHandler.post {
+            try {
+                val resolver = contentResolver
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Downloads.DISPLAY_NAME, filename)
+                    put(android.provider.MediaStore.Downloads.RELATIVE_PATH, "Download/Flowport")
+                }
+                val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                if (uri != null) {
+                    resolver.openOutputStream(uri)?.use { out ->
+                        out.write(fileBytes)
+                    }
+                    android.util.Log.i("Flowport", "Saved file: $filename to Download/Flowport")
+                    
+                    // Trigger a system scan to make file immediately visible
+                    val file = android.os.Environment.getExternalStoragePublicDirectory(
+                        android.os.Environment.DIRECTORY_DOWNLOADS + "/Flowport/" + filename
+                    )
+                    android.media.MediaScannerConnection.scanFile(
+                        this, arrayOf(file.absolutePath), null
+                    ) { _, _ -> }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("Flowport", "Failed to save drag-drop file", e)
+            }
         }
     }
 

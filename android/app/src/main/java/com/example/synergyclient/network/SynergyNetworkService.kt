@@ -359,12 +359,43 @@ class SynergyNetworkService(
                 // Clipboard data
                 if (payload.size >= 6) {
                     val mark = payload[5].toInt() and 0xFF
-                    if ((mark == 1 || mark == 3) && payload.size > 10) {
-                        val strLen = read32(payload, 6)
-                        if (strLen > 0 && payload.size >= 10 + strLen) {
-                            val text = String(payload, 10, strLen, StandardCharsets.UTF_8)
-                            log("← DCLP clipboard (${text.length} chars)")
-                            svc?.setClipboard(text)
+                    if (mark == 1 || mark == 3) {
+                        // Text clipboard
+                        if (payload.size > 10) {
+                            val strLen = read32(payload, 6)
+                            if (strLen > 0 && payload.size >= 10 + strLen) {
+                                val text = String(payload, 10, strLen, StandardCharsets.UTF_8)
+                                log("← DCLP clipboard (${text.length} chars)")
+                                svc?.setClipboard(text)
+                            }
+                        }
+                    } else if (mark == 2) {
+                        // Image clipboard (PNG/JPEG raw bytes)
+                        if (payload.size > 10) {
+                            val imgLen = read32(payload, 6)
+                            if (imgLen > 0 && payload.size >= 10 + imgLen) {
+                                val imgBytes = payload.copyOfRange(10, 10 + imgLen)
+                                log("← DCLP image clipboard (${imgBytes.size} bytes)")
+                                svc?.setClipboardImage(imgBytes)
+                            }
+                        }
+                    }
+                }
+            }
+
+            "DDRP" -> {
+                // Drag & Drop File payload (custom command: DDRP)
+                // Format: 4 bytes filename length + filename (UTF-8) + 4 bytes content length + content raw bytes
+                if (payload.size >= 8) {
+                    val nameLen = read32(payload, 0)
+                    if (payload.size >= 8 + nameLen) {
+                        val filename = String(payload, 4, nameLen, StandardCharsets.UTF_8)
+                        val contentOffset = 4 + nameLen
+                        val fileLen = read32(payload, contentOffset)
+                        if (payload.size >= contentOffset + 4 + fileLen) {
+                            val fileBytes = payload.copyOfRange(contentOffset + 4, contentOffset + 4 + fileLen)
+                            log("← DDRP drag & drop file '$filename' (${fileBytes.size} bytes)")
+                            svc?.saveSharedFile(filename, fileBytes)
                         }
                     }
                 }
