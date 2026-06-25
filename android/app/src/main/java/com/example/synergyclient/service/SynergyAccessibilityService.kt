@@ -55,6 +55,10 @@ class SynergyAccessibilityService : AccessibilityService() {
 
     private var lastClickTime = 0L
 
+    // ── Web-type buffer: batches chars for long-press paste in browsers ────
+    private val webTypeBuffer = StringBuilder()
+    private val webPasteRunnable = Runnable { executeWebPaste() }
+
     // ── Lifecycle ─────────────────────────────────────────────────────────
 
     override fun onCreate() {
@@ -605,12 +609,122 @@ class SynergyAccessibilityService : AccessibilityService() {
             )
             node.recycle()
             if (ok) { suppressKeyboard(); return }
-            // ACTION_SET_TEXT failed — node is likely a WebView HTML input.
-            // Fall through to clipboard paste fallback.
         }
-        // WebView / browser-tab fallback: paste via clipboard at cursor position.
-        pasteStringAtCursor(s)
+        // Tier 2: clipboard ACTION_PASTE (works in Chrome WebView)
+        val pasteOk = tryClipboardPaste(s)
+        if (pasteOk) { suppressKeyboard(); return }
+        // Tier 3: long-press paste menu (works in Samsung Internet & others)
+        typeInWebView(s)
         suppressKeyboard()
+    }
+
+    /** Try pasting a single char/string via clipboard ACTION_PASTE. Returns true if succeeded. */
+    private fun tryClipboardPaste(s: String): Boolean {
+        var result = false
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val prev = cm.primaryClip
+        cm.setPrimaryClip(ClipData.newPlainText("synergy_type", s))
+        val nd = focusedAnyNode()
+        if (nd != null) {
+            result = nd.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+            nd.recycle()
+        }
+        if (!result) {
+            try {
+                for (win in windows) {
+                    val wRoot = win.root ?: continue
+                    val n = wRoot.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                        ?: wRoot.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
+                    if (n != null) {
+                        result = n.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+                        n.recycle(); wRoot.recycle(); break
+                    }
+                    wRoot.recycle()
+                }
+            } catch (_: Exception) {}
+        }
+        if (!result && prev != null) {
+            mainHandler.postDelayed({ try { cm.setPrimaryClip(prev) } catch (_: Exception) {} }, 200)
+        }
+        return result
+    }
+
+    /**
+     * Buffers chars and pastes them via long-press → Paste menu after 200ms of silence.
+     * Used for browsers (e.g. Samsung Internet) that expose no editable accessibility nodes.
+     */
+    private fun typeInWebView(s: String) {
+        synchronized(webTypeBuffer) { webTypeBuffer.append(s) }
+        mainHandler.removeCallbacks(webPasteRunnable)
+        mainHandler.postDelayed(webPasteRunnable, 200)
+    }
+
+    private fun executeWebPaste() {
+        val text = synchronized(webTypeBuffer) {
+            val t = webTypeBuffer.toString()
+            webTypeBuffer.clear()
+            t
+        }
+        if (text.isEmpty()) return
+
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val prev = cm.primaryClip
+        cm.setPrimaryClip(ClipData.newPlainText("synergy_type", text))
+
+        // Long-press at cursor position to trigger paste context menu
+        val cx = cursorX.toFloat()
+        val cy = cursorY.toFloat()
+        val path = Path().apply { moveTo(cx, cy) }
+        try {
+            val stroke = GestureDescription.StrokeDescription(path, 0L, 600L)
+            dispatchGesture(
+                GestureDescription.Builder().addStroke(stroke).build(),
+                object : GestureResultCallback() {
+                    override fun onCompleted(g: GestureDescription?) {
+                        mainHandler.postDelayed({ clickPasteInMenu(prev) }, 350)
+                    }
+                    override fun onCancelled(g: GestureDescription?) {
+                        mainHandler.postDelayed({
+                            if (prev != null) try { cm.setPrimaryClip(prev) } catch (_: Exception) {}
+                        }, 100)
+                    }
+                },
+                mainHandler
+            )
+        } catch (_: Exception) {}
+    }
+
+    private fun clickPasteInMenu(prevClip: ClipData?) {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        try {
+            for (win in windows) {
+                val wRoot = win.root ?: continue
+                val pasteNode = findNodeWithText(wRoot, "Paste")
+                if (pasteNode != null) {
+                    pasteNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    pasteNode.recycle(); wRoot.recycle()
+                    mainHandler.postDelayed({
+                        if (prevClip != null) try { cm.setPrimaryClip(prevClip) } catch (_: Exception) {}
+                    }, 500)
+                    return
+                }
+                wRoot.recycle()
+            }
+        } catch (_: Exception) {}
+        if (prevClip != null) try { cm.setPrimaryClip(prevClip) } catch (_: Exception) {}
+    }
+
+    private fun findNodeWithText(node: AccessibilityNodeInfo, text: String): AccessibilityNodeInfo? {
+        val label = (node.text ?: node.contentDescription)?.toString() ?: ""
+        if (label.equals(text, ignoreCase = true) && node.isClickable)
+            return AccessibilityNodeInfo.obtain(node)
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findNodeWithText(child, text)
+            if (found != null) { child.recycle(); return found }
+            child.recycle()
+        }
+        return null
     }
 
     private fun deleteLastChar() {
@@ -651,24 +765,28 @@ class SynergyAccessibilityService : AccessibilityService() {
         mainHandler.post {
             try {
                 val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                val prev = cm.primaryClip           // save current clipboard
+                val prev = cm.primaryClip
                 cm.setPrimaryClip(ClipData.newPlainText("synergy_type", s))
 
-                val pasted = focusedAnyNode()?.let { nd ->
+                val anyNode = focusedAnyNode()
+                android.util.Log.d("SynergyType", "pasteStringAtCursor: node=${anyNode?.className} pkg=${anyNode?.packageName}")
+                val pasted = anyNode?.let { nd ->
                     val ok = nd.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-                    nd.recycle()
-                    ok
+                    android.util.Log.d("SynergyType", "ACTION_PASTE=$ok on ${nd.className}")
+                    nd.recycle(); ok
                 } ?: false
 
                 if (!pasted) {
-                    // Last-resort: search all windows
+                    android.util.Log.d("SynergyType", "Paste failed — scanning all windows")
                     try {
                         for (win in windows) {
                             val wRoot = win.root ?: continue
                             val nd = wRoot.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
                                 ?: wRoot.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
+                            android.util.Log.d("SynergyType", "  win[${win.title}] nd=${nd?.className}")
                             if (nd != null) {
-                                nd.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+                                val r = nd.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+                                android.util.Log.d("SynergyType", "  paste=$r")
                                 nd.recycle(); wRoot.recycle(); break
                             }
                             wRoot.recycle()
