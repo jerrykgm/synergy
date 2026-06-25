@@ -612,8 +612,6 @@ class SynergyAccessibilityService : AccessibilityService() {
             node.recycle()
             if (ok) { suppressKeyboard(); return }
         }
-        // Force MainActivity to the foreground to gain clipboard permissions
-        bringAppToForeground()
         // Tier 2: clipboard ACTION_PASTE (works in Chrome WebView)
         val pasteOk = tryClipboardPaste(s)
         if (pasteOk) { suppressKeyboard(); return }
@@ -622,16 +620,6 @@ class SynergyAccessibilityService : AccessibilityService() {
         // Tier 4: long-press paste menu (works in Samsung Internet & others)
         typeInWebView(s)
         suppressKeyboard()
-    }
-
-    private fun bringAppToForeground() {
-        try {
-            val intent = android.content.Intent(this, MainActivity::class.java).apply {
-                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            }
-            startActivity(intent)
-        } catch (_: Exception) {}
     }
 
     /** Try pasting a single char/string via clipboard ACTION_PASTE. Returns true if succeeded. */
