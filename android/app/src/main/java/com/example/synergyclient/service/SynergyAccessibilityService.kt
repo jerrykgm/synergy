@@ -328,24 +328,6 @@ class SynergyAccessibilityService : AccessibilityService() {
                     softKeyboardController.showMode = SHOW_MODE_AUTO
                 }
             } catch (_: Exception) {}
-            try {
-                val current = android.provider.Settings.Secure.getString(contentResolver, android.provider.Settings.Secure.DEFAULT_INPUT_METHOD)
-                val target = "com.example.synergyclient/.service.SynergyInputMethodService"
-                if (current == target) {
-                    val ime = SynergyInputMethodService.instance
-                    if (ime != null) {
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                            ime.switchToNextInputMethod(false)
-                        } else {
-                            val token = ime.window?.window?.attributes?.token
-                            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                            if (token != null) {
-                                imm.switchToNextInputMethod(token, false)
-                            }
-                        }
-                    }
-                }
-            } catch (_: Exception) {}
         }
     }
 
