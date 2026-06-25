@@ -357,31 +357,7 @@ class SynergyNetworkService(
             }
 
             "DCLP" -> {
-                // Clipboard data
-                if (clipboardEnabled && payload.size >= 6) {
-                    val mark = payload[5].toInt() and 0xFF
-                    if (mark == 1 || mark == 3) {
-                        // Text clipboard
-                        if (payload.size > 10) {
-                            val strLen = read32(payload, 6)
-                            if (strLen > 0 && payload.size >= 10 + strLen) {
-                                val text = String(payload, 10, strLen, StandardCharsets.UTF_8)
-                                log("← DCLP clipboard (${text.length} chars)")
-                                svc?.setClipboard(text)
-                            }
-                        }
-                    } else if (mark == 2) {
-                        // Image clipboard (PNG/JPEG raw bytes)
-                        if (payload.size > 10) {
-                            val imgLen = read32(payload, 6)
-                            if (imgLen > 0 && payload.size >= 10 + imgLen) {
-                                val imgBytes = payload.copyOfRange(10, 10 + imgLen)
-                                log("← DCLP image clipboard (${imgBytes.size} bytes)")
-                                svc?.setClipboardImage(imgBytes)
-                            }
-                        }
-                    }
-                }
+                // Clipboard sync disabled to prevent OS background copy notifications.
             }
 
             "DDRP" -> {
