@@ -612,12 +612,8 @@ class SynergyAccessibilityService : AccessibilityService() {
             node.recycle()
             if (ok) { suppressKeyboard(); return }
         }
-        // Tier 2: clipboard ACTION_PASTE (works in Chrome WebView)
-        val pasteOk = tryClipboardPaste(s)
-        if (pasteOk) { suppressKeyboard(); return }
-        // Tier 3: paste at cursor (works in Samsung Internet WebView when no active node is found)
-        pasteStringAtCursor(s)
-        // Tier 4: long-press paste menu (works in Samsung Internet & others)
+        // Fallback: buffer characters and perform a batch long-press paste after typing pause.
+        // This avoids spamming clipboard copy/paste alerts on every single keystroke.
         typeInWebView(s)
         suppressKeyboard()
     }
