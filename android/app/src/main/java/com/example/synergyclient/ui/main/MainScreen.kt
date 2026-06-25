@@ -207,7 +207,8 @@ fun MainScreen(
         if (connectionStatus == "Connected") {
             // Short delay so the user sees the "Connected" state, then hide
             delay(800)
-            activity?.moveTaskToBack(true)
+            // Commented out to prevent the app from auto-minimizing when connected, keeping it in the foreground for typing.
+            // activity?.moveTaskToBack(true)
         }
     }
 
