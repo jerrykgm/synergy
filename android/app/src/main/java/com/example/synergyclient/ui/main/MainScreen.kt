@@ -127,15 +127,26 @@ fun MainScreen(
         }
     }
 
-    // Start the persistent service (no-op if already running), then bind for status
-    LaunchedEffect(Unit) {
+    // ── Start the persistent service, then bind for UI status updates ────────
+    DisposableEffect(Unit) {
         val intent = android.content.Intent(context, com.example.synergyclient.network.SynergyForegroundService::class.java)
+        // Start independently — ensures service survives even if UI unbinds
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
         } else {
             context.startService(intent)
         }
-        context.bindService(intent, serviceConnection, android.content.Context.BIND_AUTO_CREATE)
+        // Bind for live status/log callbacks — BIND_NOT_FOREGROUND ensures
+        // UI bind/unbind doesn't affect the service's foreground state or lifetime
+        context.bindService(
+            intent, serviceConnection,
+            android.content.Context.BIND_AUTO_CREATE or android.content.Context.BIND_NOT_FOREGROUND
+        )
+        onDispose {
+            // Only remove callbacks — do NOT unbind or stop the service
+            // so it keeps running when app is hidden
+            foregroundService?.removeListeners()
+        }
     }
 
     val isConnected  = connectionStatus == "Connected"
