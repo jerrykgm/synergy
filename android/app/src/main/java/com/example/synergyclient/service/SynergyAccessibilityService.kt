@@ -596,6 +596,13 @@ class SynergyAccessibilityService : AccessibilityService() {
     }
 
     private fun insertString(s: String) {
+        // Try virtual keyboard input first to bypass all clipboard syncs/notifications
+        val ime = SynergyInputMethodService.instance
+        if (ime != null) {
+            ime.typeText(s)
+            return
+        }
+
         val node = focusedEditable()
         if (node != null) {
             val newText = synchronized(textBuffer) {
@@ -728,6 +735,11 @@ class SynergyAccessibilityService : AccessibilityService() {
     }
 
     private fun deleteLastChar() {
+        val ime = SynergyInputMethodService.instance
+        if (ime != null) {
+            ime.sendBackspace()
+            return
+        }
         val node = focusedEditable()
         if (node != null) {
             val newText = synchronized(textBuffer) {
@@ -827,6 +839,11 @@ class SynergyAccessibilityService : AccessibilityService() {
     }
 
     private fun triggerEnterKey() {
+        val ime = SynergyInputMethodService.instance
+        if (ime != null) {
+            ime.sendEnter()
+            return
+        }
         val node = focusedEditable() ?: return
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             val success = node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
