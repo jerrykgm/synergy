@@ -46,8 +46,8 @@ class SynergyForegroundService : Service() {
         const val EXTRA_LOGGING      = "EXTRA_LOGGING"
         const val EXTRA_CLIPBOARD    = "EXTRA_CLIPBOARD"
 
-        // Reconnect back-off: 2 s → 4 s → 8 s → … capped at 30 s
-        private const val RECONNECT_BASE_MS = 2_000L
+        // Reconnect back-off: 3 s → 6 s → 12 s → … capped at 30 s
+        private const val RECONNECT_BASE_MS = 3_000L
         private const val RECONNECT_MAX_MS  = 30_000L
 
         @Volatile
