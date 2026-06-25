@@ -891,10 +891,10 @@ class SynergyAccessibilityService : AccessibilityService() {
     }
 
     private fun findFocusedEditableNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        val isRootLayout = node.className == "android.widget.FrameLayout" && node.parent == null
-        if (node.isFocused && !isRootLayout) {
-            return AccessibilityNodeInfo.obtain(node)
-        }
+        val isInputClass = node.className?.contains("EditText", ignoreCase = true) == true ||
+                           node.className?.contains("WebView", ignoreCase = true) == true ||
+                           node.isEditable
+        if (node.isFocused && (isInputClass || node.text != null)) return AccessibilityNodeInfo.obtain(node)
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             val found = findFocusedEditableNode(child)
