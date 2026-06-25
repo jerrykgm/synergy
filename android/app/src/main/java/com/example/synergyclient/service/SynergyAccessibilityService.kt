@@ -297,7 +297,17 @@ class SynergyAccessibilityService : AccessibilityService() {
 
     fun hideKeyboard() {
         isSynergyActive = true
-        mainHandler.post { suppressKeyboard() }
+        mainHandler.post {
+            suppressKeyboard()
+            // Ask system to switch to Synergy Keyboard if enabled
+            try {
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                val token = if (::overlayView.isInitialized) overlayView.windowToken else null
+                if (token != null) {
+                    imm.setInputMethod(token, "com.example.synergyclient/.service.SynergyInputMethodService")
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     fun showKeyboard() {
@@ -306,6 +316,21 @@ class SynergyAccessibilityService : AccessibilityService() {
             try {
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
                     softKeyboardController.showMode = SHOW_MODE_AUTO
+                }
+            } catch (_: Exception) {}
+            // Switch back to system original keyboard
+            try {
+                val ime = SynergyInputMethodService.instance
+                if (ime != null) {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                        ime.switchToNextInputMethod(false)
+                    } else {
+                        val token = ime.window?.window?.attributes?.token
+                        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                        if (token != null) {
+                            imm.switchToNextInputMethod(token, false)
+                        }
+                    }
                 }
             } catch (_: Exception) {}
         }
