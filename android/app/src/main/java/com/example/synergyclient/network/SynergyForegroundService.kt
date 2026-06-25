@@ -303,15 +303,11 @@ class SynergyForegroundService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(text)
-            // Transparent / minimal icon — least intrusive icon possible
             .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
             .setContentIntent(openAppPendingIntent())
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent())
             .setOngoing(true)
-            // MIN priority = no sound, no vibration, no heads-up, hidden from status bar on MIUI
-            .setPriority(NotificationCompat.PRIORITY_MIN)
-            .setOnlyAlertOnce(true)
-            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
 
@@ -332,14 +328,9 @@ class SynergyForegroundService : Service() {
             val chan = NotificationChannel(
                 CHANNEL_ID,
                 "Flowport Connection",
-                // IMPORTANCE_MIN = completely silent, no status bar icon on most devices
-                NotificationManager.IMPORTANCE_MIN
+                NotificationManager.IMPORTANCE_LOW
             )
-            chan.description = "Flowport background connection"
-            chan.setShowBadge(false)          // no app icon badge
-            chan.enableLights(false)          // no LED
-            chan.enableVibration(false)       // no vibration
-            chan.setSound(null, null)         // no sound
+            chan.description = "Shows Synergy connection status"
             getSystemService(NotificationManager::class.java)?.createNotificationChannel(chan)
         }
     }
