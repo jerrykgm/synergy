@@ -590,36 +590,122 @@ class SynergyAccessibilityService : AccessibilityService() {
     }
 
     private fun insertString(s: String) {
-        val node = focusedEditable() ?: return
-        val newText = synchronized(textBuffer) {
-            updateBufferIfNodeChanged(node)
-            textBuffer.append(s)
-            textBuffer.toString()
-        }
-        node.performAction(
-            AccessibilityNodeInfo.ACTION_SET_TEXT,
-            Bundle().apply {
-                putString(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, newText)
+        val node = focusedEditable()
+        if (node != null) {
+            val newText = synchronized(textBuffer) {
+                updateBufferIfNodeChanged(node)
+                textBuffer.append(s)
+                textBuffer.toString()
             }
-        )
-        node.recycle()
+            val ok = node.performAction(
+                AccessibilityNodeInfo.ACTION_SET_TEXT,
+                Bundle().apply {
+                    putString(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, newText)
+                }
+            )
+            node.recycle()
+            if (ok) { suppressKeyboard(); return }
+            // ACTION_SET_TEXT failed — node is likely a WebView HTML input.
+            // Fall through to clipboard paste fallback.
+        }
+        // WebView / browser-tab fallback: paste via clipboard at cursor position.
+        pasteStringAtCursor(s)
         suppressKeyboard()
     }
 
     private fun deleteLastChar() {
-        val node = focusedEditable() ?: return
-        val newText = synchronized(textBuffer) {
-            updateBufferIfNodeChanged(node)
-            if (textBuffer.isNotEmpty()) textBuffer.deleteCharAt(textBuffer.length - 1)
-            textBuffer.toString()
-        }
-        node.performAction(
-            AccessibilityNodeInfo.ACTION_SET_TEXT,
-            Bundle().apply {
-                putString(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, newText)
+        val node = focusedEditable()
+        if (node != null) {
+            val newText = synchronized(textBuffer) {
+                updateBufferIfNodeChanged(node)
+                if (textBuffer.isNotEmpty()) textBuffer.deleteCharAt(textBuffer.length - 1)
+                textBuffer.toString()
             }
-        )
-        node.recycle()
+            val ok = node.performAction(
+                AccessibilityNodeInfo.ACTION_SET_TEXT,
+                Bundle().apply {
+                    putString(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, newText)
+                }
+            )
+            node.recycle()
+            if (ok) return
+            // WebView fallback: select previous char then cut (= backspace)
+        }
+        val nd = focusedAnyNode() ?: return
+        val charArgs = Bundle().apply {
+            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                   AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER)
+            putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, true)
+        }
+        nd.performAction(AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY, charArgs)
+        nd.performAction(AccessibilityNodeInfo.ACTION_CUT)
+        nd.recycle()
+    }
+
+    /**
+     * Clipboard-based insert for WebView / browser-tab input fields.
+     * Saves and restores the previous clipboard content.
+     * ACTION_PASTE is supported by WebView even when ACTION_SET_TEXT is not.
+     */
+    private fun pasteStringAtCursor(s: String) {
+        mainHandler.post {
+            try {
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val prev = cm.primaryClip           // save current clipboard
+                cm.setPrimaryClip(ClipData.newPlainText("synergy_type", s))
+
+                val pasted = focusedAnyNode()?.let { nd ->
+                    val ok = nd.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+                    nd.recycle()
+                    ok
+                } ?: false
+
+                if (!pasted) {
+                    // Last-resort: search all windows
+                    try {
+                        for (win in windows) {
+                            val wRoot = win.root ?: continue
+                            val nd = wRoot.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                                ?: wRoot.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
+                            if (nd != null) {
+                                nd.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+                                nd.recycle(); wRoot.recycle(); break
+                            }
+                            wRoot.recycle()
+                        }
+                    } catch (_: Exception) {}
+                }
+
+                // Restore previous clipboard after short delay
+                mainHandler.postDelayed({
+                    try { if (prev != null) cm.setPrimaryClip(prev) } catch (_: Exception) {}
+                }, 400)
+            } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Like [focusedEditable] but accepts ANY focused node — including
+     * WebView HTML inputs which may not be flagged as isEditable.
+     */
+    private fun focusedAnyNode(): AccessibilityNodeInfo? {
+        try {
+            val root = rootInActiveWindow
+            if (root != null) {
+                val n = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                    ?: root.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
+                root.recycle()
+                if (n != null) return n
+            }
+            for (win in windows) {
+                val wRoot = win.root ?: continue
+                val n = wRoot.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                    ?: wRoot.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
+                wRoot.recycle()
+                if (n != null) return n
+            }
+        } catch (_: Exception) {}
+        return null
     }
 
     private fun triggerEnterKey() {
@@ -636,7 +722,14 @@ class SynergyAccessibilityService : AccessibilityService() {
     }
 
     private fun deleteForwardChar() {
-        val node = focusedEditable() ?: return
+        val node = focusedAnyNode() ?: return
+        // Select forward one char then cut
+        val args = Bundle().apply {
+            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                   AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER)
+            putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, true)
+        }
+        node.performAction(AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY, args)
         node.performAction(AccessibilityNodeInfo.ACTION_CUT)
         node.recycle()
     }
