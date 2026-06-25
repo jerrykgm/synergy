@@ -613,7 +613,9 @@ class SynergyAccessibilityService : AccessibilityService() {
         // Tier 2: clipboard ACTION_PASTE (works in Chrome WebView)
         val pasteOk = tryClipboardPaste(s)
         if (pasteOk) { suppressKeyboard(); return }
-        // Tier 3: long-press paste menu (works in Samsung Internet & others)
+        // Tier 3: paste at cursor (works in Samsung Internet WebView when no active node is found)
+        pasteStringAtCursor(s)
+        // Tier 4: long-press paste menu (works in Samsung Internet & others)
         typeInWebView(s)
         suppressKeyboard()
     }
