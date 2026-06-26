@@ -17,6 +17,7 @@
  */
 
 #include "server/Server.h"
+#include "deskflow/key_types.h"
 
 #include "arch/Arch.h"
 #include "base/IEventQueue.h"
@@ -1227,6 +1228,19 @@ void Server::handleClipboardChanged(const Event &event, void *vclient)
   onClipboardChanged(sender, info->m_id, info->m_sequenceNumber);
 }
 
+void Server::handleClientForceFocus(const Event &event, void *vclient)
+{
+  BaseClientProxy *client = static_cast<BaseClientProxy *>(vclient);
+  if (m_clientSet.count(client) == 0) {
+    return;
+  }
+  if (!m_forceFocus) {
+    return;
+  }
+  LOG((CLOG_NOTE "client requested force focus, switching"));
+  jumpToScreen(client);
+}
+
 void Server::handleKeyDownEvent(const Event &event, void *)
 {
   IPlatformScreen::KeyInfo *info = static_cast<IPlatformScreen::KeyInfo *>(event.getData());
@@ -1534,6 +1548,40 @@ void Server::onKeyDown(KeyID id, KeyModifierMask mask, KeyButton button, const S
 {
   LOG((CLOG_DEBUG1 "onKeyDown id=%d mask=0x%04x button=0x%04x lang=%s", id, mask, button, lang.c_str()));
   assert(m_active != NULL);
+
+  // Check for force focus hotkeys
+  if (m_forceFocus) {
+    if (id == kKeyEscape) {
+      LOG((CLOG_NOTE "Escape hotkey (Fn + Esc) triggered, pulling focus back to server"));
+      jumpToScreen(m_primaryClient);
+      return;
+    }
+    else if (id >= kKeyF1 && id <= kKeyF12) {
+      int index = id - kKeyF1; // 0 for F1, 1 for F2, etc.
+      if (index == 0) {
+        LOG((CLOG_NOTE "F1 hotkey triggered, switching focus to primary server"));
+        jumpToScreen(m_primaryClient);
+        return;
+      } else {
+        int clientIndex = 0;
+        BaseClientProxy* targetClient = nullptr;
+        for (ClientList::const_iterator it = m_clients.begin(); it != m_clients.end(); ++it) {
+          if (it->second != m_primaryClient) {
+            if (clientIndex == index - 1) {
+              targetClient = it->second;
+              break;
+            }
+            clientIndex++;
+          }
+        }
+        if (targetClient) {
+          LOG((CLOG_NOTE "F%d hotkey triggered, switching focus to client %s", index + 1, targetClient->getName().c_str()));
+          jumpToScreen(targetClient);
+          return;
+        }
+      }
+    }
+  }
 
   // relay
   if (!m_keyboardBroadcasting && IKeyState::KeyInfo::isDefault(screens)) {
