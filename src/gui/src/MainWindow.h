@@ -160,6 +160,9 @@ private:
     return m_AppConfig;
   }
   void createMenuBar();
+  void loadNotes();
+  void saveNotes();
+  void onClipboardChanged();
   void createStatusBar();
   void createTrayIcon();
   void applyConfig();

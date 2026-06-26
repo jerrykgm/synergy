@@ -178,6 +178,9 @@ extern const char *const kMsgCInfoAck;
 // defined by an option.
 extern const char *const kMsgCKeepAlive;
 
+// client requests force focus: secondary -> primary
+extern const char *const kMsgCForceFocus;
+
 //
 // data codes
 //

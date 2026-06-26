@@ -388,7 +388,10 @@ private:
 class ClientProxyEvents : public EventTypes
 {
 public:
-  ClientProxyEvents() : m_ready(Event::kUnknown), m_disconnected(Event::kUnknown)
+  ClientProxyEvents()
+      : m_ready(Event::kUnknown),
+        m_disconnected(Event::kUnknown),
+        m_forceFocus(Event::kUnknown)
   {
   }
 
@@ -410,11 +413,19 @@ public:
   */
   Event::Type disconnected();
 
+  //! Get force focus event type
+  /*!
+  Returns the force focus event type. This is sent when the client
+  requests focus.
+  */
+  Event::Type forceFocus();
+
   //@}
 
 private:
   Event::Type m_ready;
   Event::Type m_disconnected;
+  Event::Type m_forceFocus;
 };
 
 class ClientProxyUnknownEvents : public EventTypes

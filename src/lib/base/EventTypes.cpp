@@ -115,6 +115,7 @@ REGISTER_EVENT(ClientListener, connected)
 
 REGISTER_EVENT(ClientProxy, ready)
 REGISTER_EVENT(ClientProxy, disconnected)
+REGISTER_EVENT(ClientProxy, forceFocus)
 
 //
 // ClientProxyUnknown

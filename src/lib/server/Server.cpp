@@ -87,6 +87,7 @@ Server::Server(
       m_writeToDropDirThread(nullptr),
       m_ignoreFileTransfer(false),
       m_disableLockToScreen(false),
+      m_forceFocus(false),
       m_enableClipboard(true),
       m_maximumClipboardSize(INT_MAX),
       m_sendDragInfoThread(nullptr),
@@ -1105,6 +1106,8 @@ void Server::processOptions()
       newRelativeMoves = (value != 0);
     } else if (id == kOptionDisableLockToScreen) {
       m_disableLockToScreen = (value != 0);
+    } else if (id == kOptionForceFocus) {
+      m_forceFocus = (value != 0);
     } else if (id == kOptionClipboardSharing) {
       m_enableClipboard = value;
       if (!m_enableClipboard) {
@@ -1997,6 +2000,10 @@ bool Server::addClient(BaseClientProxy *client)
       m_events->forClipboard().clipboardChanged(), client->getEventTarget(),
       new TMethodEventJob<Server>(this, &Server::handleClipboardChanged, client)
   );
+  m_events->adoptHandler(
+      m_events->forClientProxy().forceFocus(), client->getEventTarget(),
+      new TMethodEventJob<Server>(this, &Server::handleClientForceFocus, client)
+  );
 
   // add to list
   m_clientSet.insert(client);
@@ -2025,6 +2032,7 @@ bool Server::removeClient(BaseClientProxy *client)
   m_events->removeHandler(m_events->forIScreen().shapeChanged(), client->getEventTarget());
   m_events->removeHandler(m_events->forClipboard().clipboardGrabbed(), client->getEventTarget());
   m_events->removeHandler(m_events->forClipboard().clipboardChanged(), client->getEventTarget());
+  m_events->removeHandler(m_events->forClientProxy().forceFocus(), client->getEventTarget());
 
   // remove from list
   m_clients.erase(getName(client));
