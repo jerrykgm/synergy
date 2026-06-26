@@ -54,11 +54,32 @@ class SynergyNetworkService(
             'L'.code.toByte(),
             'V'.code.toByte()
         )
+
+        fun getLocalIpAddress(): String {
+            try {
+                val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+                while (interfaces.hasMoreElements()) {
+                    val networkInterface = interfaces.nextElement()
+                    val addresses = networkInterface.inetAddresses
+                    while (addresses.hasMoreElements()) {
+                        val address = addresses.nextElement()
+                        if (!address.isLoopbackAddress && address is java.net.Inet4Address) {
+                            val ip = address.hostAddress ?: ""
+                            if (ip.isNotEmpty() && ip != "127.0.0.1") {
+                                return ip
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+            return ""
+        }
     }
 
     private var socket: Socket?            = null
     private var job:    Job?               = null
     private val scope   = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var webServer: NotesWebServer? = null
 
     @Volatile private var outputStream: DataOutputStream? = null
 
@@ -92,6 +113,7 @@ class SynergyNetworkService(
 
     fun start() {
         startLogFlusher()
+        webServer = NotesWebServer(context, 8080).apply { start() }
         job = scope.launch {
             // Elevate IO thread priority for minimal scheduling jitter
             Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
@@ -195,6 +217,8 @@ class SynergyNetworkService(
 
     fun stop() {
         logFlusher?.cancel()
+        try { webServer?.stop() } catch (_: Exception) {}
+        webServer = null
         try { socket?.close() } catch (_: Exception) {}
         socket = null; outputStream = null
         job?.cancel(); job = null

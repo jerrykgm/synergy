@@ -48,4 +48,14 @@ class SynergyInputMethodService : InputMethodService() {
         ic?.sendKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER))
         ic?.sendKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER))
     }
+
+    fun sendTab(isShift: Boolean) {
+        val ic = currentInputConnection
+        if (ic != null) {
+            val metaState = if (isShift) android.view.KeyEvent.META_SHIFT_ON else 0
+            val now = android.os.SystemClock.uptimeMillis()
+            ic.sendKeyEvent(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_TAB, 0, metaState))
+            ic.sendKeyEvent(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_TAB, 0, metaState))
+        }
+    }
 }
