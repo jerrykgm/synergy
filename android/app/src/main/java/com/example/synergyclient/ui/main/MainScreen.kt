@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -91,6 +92,10 @@ fun MainScreen(
     var loggingEnabled by remember { mutableStateOf(prefs.getBoolean("logging_enabled", false)) }
     var isMacServerMode by remember { mutableStateOf(prefs.getBoolean("mac_server_mode", false)) }
     var clipboardSyncEnabled by remember { mutableStateOf(prefs.getBoolean("clipboard_sync", true)) }
+    var showNotesDialog by remember { mutableStateOf(false) }
+    var autoHideKeyboard by remember { mutableStateOf(prefs.getBoolean("auto_hide_keyboard", true)) }
+    var autoHideApp by remember { mutableStateOf(prefs.getBoolean("auto_hide_app", false)) }
+    var focusAppOnType by remember { mutableStateOf(prefs.getBoolean("focus_app_on_type", false)) }
 
     // ── Log ring buffer ────────────────────────────────────────────────────
     val logs      = remember { mutableStateListOf<String>() }
@@ -153,6 +158,8 @@ fun MainScreen(
     val isConnecting = connectionStatus == "Connecting…" || connectionStatus == "Connecting..."
 
     var isAccessibilityEnabled by remember { mutableStateOf(false) }
+    var isKeyboardEnabled      by remember { mutableStateOf(false) }
+    var isKeyboardDefault      by remember { mutableStateOf(false) }
 
     // ── Discovery engine (singleton per composition) ───────────────────────
     val discovery = remember { SynergyServerDiscovery() }
@@ -196,6 +203,15 @@ fun MainScreen(
         }
     }
 
+    // ── Poll keyboard status ───────────────────────────────────────────────
+    LaunchedEffect(Unit) {
+        while (true) {
+            isKeyboardEnabled = isInputMethodEnabled(context)
+            isKeyboardDefault = isInputMethodDefault(context)
+            delay(1000)
+        }
+    }
+
     // ── Auto-scroll log ────────────────────────────────────────────────────
     LaunchedEffect(logs.size) {
         if (logs.isNotEmpty()) listState.animateScrollToItem(logs.size - 1)
@@ -204,7 +220,7 @@ fun MainScreen(
     // ── Auto-hide to background when connected ────────────────────────────
     val activity = context as? android.app.Activity
     LaunchedEffect(connectionStatus) {
-        if (connectionStatus == "Connected") {
+        if (connectionStatus == "Connected" && autoHideApp) {
             // Short delay so the user sees the "Connected" state, then hide
             delay(800)
             activity?.moveTaskToBack(true)
@@ -219,8 +235,10 @@ fun MainScreen(
             putString("client_name",    clientName)
             putBoolean("auto_reconnect",    autoReconnect)
             putBoolean("logging_enabled",   loggingEnabled)
+            putBoolean("auto_hide_app",     autoHideApp)
             putBoolean("mac_server_mode",   isMacServerMode)
             putBoolean("clipboard_sync",    clipboardSyncEnabled)
+            putBoolean("focus_app_on_type",  focusAppOnType)
             apply()
         }
     }
@@ -291,6 +309,19 @@ fun MainScreen(
             AccessibilityWarningBanner(context = context)
         }
 
+        // ── Keyboard warning ──────────────────────────────────────────────
+        AnimatedVisibility(
+            visible = !isKeyboardEnabled || !isKeyboardDefault,
+            enter   = slideInVertically() + fadeIn(),
+            exit    = slideOutVertically() + fadeOut()
+        ) {
+            KeyboardWarningBanner(
+                context = context,
+                isKeyboardEnabled = isKeyboardEnabled,
+                isKeyboardDefault = isKeyboardDefault
+            )
+        }
+
         // ── Network Scan Panel ─────────────────────────────────────────────
         ScanPanel(
             discovery        = discovery,
@@ -306,6 +337,26 @@ fun MainScreen(
             }
         )
 
+        // ── Keyboard settings ──────────────────────────────────────────────
+        KeyboardCard(
+            isKeyboardEnabled = isKeyboardEnabled,
+            isKeyboardDefault = isKeyboardDefault,
+            autoHideKeyboard = autoHideKeyboard,
+            onAutoHideChange = { checked ->
+                autoHideKeyboard = checked
+                prefs.edit().putBoolean("auto_hide_keyboard", checked).apply()
+            },
+            onEnableClick = {
+                context.startActivity(
+                    android.content.Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS)
+                )
+            },
+            onSetDefaultClick = {
+                val imm = context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                imm.showInputMethodPicker()
+            }
+        )
+
         // ── Connection settings ────────────────────────────────────────────
         ConnectionCard(
             serverIp        = serverIp,
@@ -315,6 +366,8 @@ fun MainScreen(
             loggingEnabled  = loggingEnabled,
             isMacServerMode = isMacServerMode,
             clipboardSyncEnabled = clipboardSyncEnabled,
+            autoHideApp     = autoHideApp,
+            focusAppOnType  = focusAppOnType,
             isConnected     = isConnected,
             isConnecting    = isConnecting,
             onServerIpChange     = { serverIp = it },
@@ -324,8 +377,58 @@ fun MainScreen(
             onLoggingChange      = { loggingEnabled = it },
             onMacModeChange      = { isMacServerMode = it },
             onClipboardSyncChange = { clipboardSyncEnabled = it },
+            onAutoHideAppChange  = { checked ->
+                autoHideApp = checked
+                prefs.edit().putBoolean("auto_hide_app", checked).apply()
+            },
+            onFocusAppChange     = { checked ->
+                focusAppOnType = checked
+                prefs.edit().putBoolean("focus_app_on_type", checked).apply()
+            },
             onConnectClick       = { if (isConnected || isConnecting) disconnect() else connect() }
         )
+
+        // ── Shared Editor & Sticky Notes Action ────────────────────────────
+        Surface(
+            shape    = RoundedCornerShape(12.dp),
+            color    = Card,
+            border   = androidx.compose.foundation.BorderStroke(1.dp, Border),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("SHARED TEXT EDITOR & STICKY NOTES", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Muted, letterSpacing = 1.5.sp)
+                    Text("Create, edit and sync notes across devices", fontSize = 10.sp, color = TextCol.copy(alpha = 0.7f))
+                }
+                Button(
+                    onClick = { showNotesDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = Accent),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("OPEN NOTES", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+        }
+
+        if (showNotesDialog) {
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { showNotesDialog = false },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    color = Card,
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Border)
+                ) {
+                    TextEditorAndClipCard(context = context, onDismiss = { showNotesDialog = false })
+                }
+            }
+        }
 
         // ── Activity log ───────────────────────────────────────────────────
         ActivityLog(
@@ -587,6 +690,8 @@ private fun ConnectionCard(
     loggingEnabled:  Boolean,
     isMacServerMode: Boolean,
     clipboardSyncEnabled: Boolean,
+    autoHideApp:     Boolean,
+    focusAppOnType:  Boolean,
     isConnected:     Boolean,
     isConnecting:    Boolean,
     onServerIpChange:      (String)  -> Unit,
@@ -596,6 +701,8 @@ private fun ConnectionCard(
     onLoggingChange:       (Boolean) -> Unit,
     onMacModeChange:       (Boolean) -> Unit,
     onClipboardSyncChange: (Boolean) -> Unit,
+    onAutoHideAppChange:   (Boolean) -> Unit,
+    onFocusAppChange:      (Boolean) -> Unit,
     onConnectClick:        () -> Unit,
 ) {
     Surface(
@@ -657,6 +764,8 @@ private fun ConnectionCard(
             ToggleRow("Mac Server Mode", "Maps ⌘+C/V → Ctrl+C/V on this device", isMacServerMode, onMacModeChange,
                 highlightColor = Accent)
             ToggleRow("Sync Clipboard",  "Sync clipboard copy-pastes between devices", clipboardSyncEnabled, onClipboardSyncChange)
+            ToggleRow("Auto-minimize App", "Send app to background when connected", autoHideApp, onAutoHideAppChange)
+            ToggleRow("Focus app on typing", "Focus Synergy client when key is typed", focusAppOnType, onFocusAppChange)
 
             val btnGradient = if (isConnected)
                 Brush.horizontalGradient(listOf(Red, Color(0xFFC0392B)))
@@ -775,6 +884,554 @@ private fun ActivityLog(
                         maxLines   = 1,
                         overflow   = TextOverflow.Ellipsis
                     )
+                }
+            }
+        }
+    }
+}
+
+// ── Keyboard status check helpers ───────────────────────────────────────────
+private fun isInputMethodEnabled(context: android.content.Context): Boolean {
+    val imm = context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+    val enabledIMEs = imm.enabledInputMethodList
+    val pkg = context.packageName
+    return enabledIMEs.any { it.id.contains(pkg) && it.id.contains("SynergyInputMethodService") }
+}
+
+private fun isInputMethodDefault(context: android.content.Context): Boolean {
+    val defaultIME = android.provider.Settings.Secure.getString(
+        context.contentResolver,
+        android.provider.Settings.Secure.DEFAULT_INPUT_METHOD
+    ) ?: return false
+    val pkg = context.packageName
+    return defaultIME.contains(pkg) && defaultIME.contains("SynergyInputMethodService")
+}
+
+@Composable
+private fun KeyboardWarningBanner(
+    context: android.content.Context,
+    isKeyboardEnabled: Boolean,
+    isKeyboardDefault: Boolean
+) {
+    val bannerColor = if (!isKeyboardEnabled) Red else Amber
+    val bannerBg = if (!isKeyboardEnabled) Color(0xFF2A1F1F) else Color(0xFF2B251F)
+    val text = if (!isKeyboardEnabled) "Synergy Keyboard is disabled" else "Synergy Keyboard not selected"
+    val subtext = if (!isKeyboardEnabled) "Enable the virtual keyboard in system settings." else "Set Synergy Keyboard as default to type."
+    val btnText = if (!isKeyboardEnabled) "ENABLE" else "SET DEFAULT"
+
+    Surface(
+        shape  = RoundedCornerShape(10.dp),
+        color  = bannerBg,
+        border = androidx.compose.foundation.BorderStroke(1.dp, bannerColor.copy(alpha = 0.4f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text, fontWeight = FontWeight.Bold, color = bannerColor, fontSize = 13.sp)
+                Text(subtext, fontSize = 11.sp, color = bannerColor.copy(alpha = 0.7f))
+            }
+            Button(
+                onClick = {
+                    if (!isKeyboardEnabled) {
+                        context.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS)
+                        )
+                    } else {
+                        val imm = context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                        imm.showInputMethodPicker()
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = bannerColor),
+                shape  = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Text(btnText, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            }
+        }
+    }
+}
+
+@Composable
+private fun KeyboardCard(
+    isKeyboardEnabled: Boolean,
+    isKeyboardDefault: Boolean,
+    autoHideKeyboard: Boolean,
+    onAutoHideChange: (Boolean) -> Unit,
+    onEnableClick: () -> Unit,
+    onSetDefaultClick: () -> Unit,
+) {
+    Surface(
+        shape    = RoundedCornerShape(12.dp),
+        color    = Card,
+        border   = androidx.compose.foundation.BorderStroke(1.dp, Border),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("SYNERGY KEYBOARD", fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                color = Muted, letterSpacing = 1.5.sp)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Keyboard Status", fontSize = 13.sp, color = TextCol)
+                    Text(
+                        text = when {
+                            !isKeyboardEnabled -> "Not Enabled in system settings"
+                            !isKeyboardDefault -> "Enabled, but not set as default"
+                            else -> "✓ Active and set as default keyboard"
+                        },
+                        fontSize = 11.sp,
+                        color = when {
+                            !isKeyboardEnabled -> Red
+                            !isKeyboardDefault -> Amber
+                            else -> Green
+                        }
+                    )
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (!isKeyboardEnabled) {
+                        Button(
+                            onClick = onEnableClick,
+                            colors = ButtonDefaults.buttonColors(containerColor = Accent),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Text("ENABLE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    } else if (!isKeyboardDefault) {
+                        Button(
+                            onClick = onSetDefaultClick,
+                            colors = ButtonDefaults.buttonColors(containerColor = Amber),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Text("SET DEFAULT", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = onSetDefaultClick,
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Border),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Muted),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Text("SWITCH IME", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(1.dp).background(Border).fillMaxWidth())
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Auto-hide soft keyboard", fontSize = 12.sp, color = TextCol)
+                    Text("Hide on-screen keyboard when Synergy typing is active", fontSize = 10.sp, color = Muted)
+                }
+                Switch(
+                    checked = autoHideKeyboard,
+                    onCheckedChange = onAutoHideChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Accent,
+                        uncheckedThumbColor = Muted,
+                        uncheckedTrackColor = Border
+                    )
+                )
+            }
+        }
+    }
+}
+
+// ── Text Editor & Sticky Notes & Clipboard History Card ─────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TextEditorAndClipCard(
+    context: android.content.Context,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var files by remember { mutableStateOf(emptyList<String>()) }
+    var selectedFile by remember { mutableStateOf("") }
+    var editorContent by remember { mutableStateOf("") }
+    var selectedColor by remember { mutableStateOf("yellow") } // yellow, blue, pink, green, purple
+    var newFileName by remember { mutableStateOf("") }
+    var clips by remember { mutableStateOf(emptyList<String>()) }
+
+    // Colors mapping
+    val noteColors = mapOf(
+        "yellow" to Color(0xFFFFF9C4),
+        "blue"   to Color(0xFFB3E5FC),
+        "pink"   to Color(0xFFF8BBD0),
+        "green"  to Color(0xFFC8E6C9),
+        "purple" to Color(0xFFE1BEE7)
+    )
+
+    fun loadFiles() {
+        files = com.example.synergyclient.data.NotesManager.getTextFiles(context)
+        if (selectedFile.isEmpty() && files.isNotEmpty()) {
+            selectedFile = files[0]
+        }
+    }
+
+    fun refreshEditor() {
+        if (selectedFile.isNotEmpty()) {
+            val raw = com.example.synergyclient.data.NotesManager.readFile(context, selectedFile)
+            if (raw.startsWith("#color:")) {
+                val parts = raw.split("\n", limit = 2)
+                selectedColor = parts[0].substringAfter("#color:").trim()
+                editorContent = if (parts.size > 1) parts[1] else ""
+            } else {
+                selectedColor = "yellow"
+                editorContent = raw
+            }
+        } else {
+            editorContent = ""
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        loadFiles()
+        clips = com.example.synergyclient.data.NotesManager.getClipHistory(context)
+    }
+
+    LaunchedEffect(selectedFile) {
+        refreshEditor()
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            clips = com.example.synergyclient.data.NotesManager.getClipHistory(context)
+            loadFiles()
+            kotlinx.coroutines.delay(2000)
+        }
+    }
+
+    Surface(
+        shape    = RoundedCornerShape(12.dp),
+        color    = Card,
+        border   = androidx.compose.foundation.BorderStroke(1.dp, Border),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("STICKY NOTES & TEXT EDITOR", fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                    color = Muted, letterSpacing = 1.5.sp)
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Text("✕", color = Muted, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            val localIp = remember { com.example.synergyclient.network.SynergyNetworkService.getLocalIpAddress() }
+            if (localIp.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Bg)
+                        .border(1.dp, Border, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Web Shared Sync Server Active", color = Green, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Open in browser: http://$localIp:8080", color = TextCol, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    }
+                    TextButton(
+                        onClick = {
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            val clip = android.content.ClipData.newPlainText("web_url", "http://$localIp:8080")
+                            clipboard.setPrimaryClip(clip)
+                        },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("COPY URL", fontSize = 10.sp, color = Accent, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            // ── Section 1: Sticky Notes Horizontal Desk View ────────────────
+            if (files.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    files.forEachIndexed { idx, name ->
+                        val rawContent = com.example.synergyclient.data.NotesManager.readFile(context, name)
+                        val noteColorName = if (rawContent.startsWith("#color:")) {
+                            rawContent.split("\n", limit = 2)[0].substringAfter("#color:").trim()
+                        } else "yellow"
+                        val noteTextClean = if (rawContent.startsWith("#color:")) {
+                            rawContent.split("\n", limit = 2).getOrNull(1) ?: ""
+                        } else rawContent
+
+                        val noteColor = noteColors[noteColorName] ?: Color(0xFFFFF9C4)
+                        
+                        val rot = when (idx % 4) {
+                            0 -> -2f
+                            1 -> 1.5f
+                            2 -> -1f
+                            else -> 2f
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .size(width = 110.dp, height = 110.dp)
+                                .rotate(rot)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(noteColor)
+                                .clickable { selectedFile = name }
+                                .padding(8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("📌", fontSize = 12.sp)
+                            Text(
+                                text = if (noteTextClean.isBlank()) name.substringBefore(".txt") else noteTextClean,
+                                color = Color.DarkGray,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 4,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f).padding(top = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ── Section 2: Create a New Note File ──────────────────────────
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Bg)
+                    .border(1.dp, Border, RoundedCornerShape(8.dp))
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = newFileName,
+                        onValueChange = { newFileName = it },
+                        label = { Text("New file name (e.g. todo)", color = Muted, fontSize = 11.sp) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Accent, unfocusedBorderColor = Border,
+                            focusedTextColor = TextCol, unfocusedTextColor = TextCol
+                        ),
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    Button(
+                        onClick = {
+                            var cleanName = newFileName.trim().replace("[^a-zA-Z0-9-_]".toRegex(), "")
+                            if (cleanName.isNotEmpty()) {
+                                if (!cleanName.endsWith(".txt")) {
+                                    cleanName += ".txt"
+                                }
+                                val initialData = "#color:$selectedColor\n"
+                                com.example.synergyclient.data.NotesManager.saveFile(context, cleanName, initialData)
+                                com.example.synergyclient.network.NotesWebServer.activeInstance?.syncWithPeers(cleanName, initialData, false)
+                                loadFiles()
+                                selectedFile = cleanName
+                                newFileName = ""
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Accent),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                    ) {
+                        Text("CREATE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Sticky Color:", fontSize = 11.sp, color = Muted)
+                    noteColors.forEach { (colorName, colorVal) ->
+                        val isSelected = selectedColor == colorName
+                        Box(
+                            modifier = Modifier
+                                .size(20.dp)
+                                .clip(CircleShape)
+                                .background(colorVal)
+                                .border(
+                                    width = if (isSelected) 2.dp else 1.dp,
+                                    color = if (isSelected) Accent else Color.Transparent,
+                                    shape = CircleShape
+                                )
+                                .clickable {
+                                    selectedColor = colorName
+                                    if (selectedFile.isNotEmpty()) {
+                                        val toSave = "#color:$colorName\n$editorContent"
+                                        com.example.synergyclient.data.NotesManager.saveFile(context, selectedFile, toSave)
+                                        com.example.synergyclient.network.NotesWebServer.activeInstance?.syncWithPeers(selectedFile, toSave, false)
+                                        loadFiles()
+                                    }
+                                }
+                        )
+                    }
+                }
+            }
+
+            // ── Section 3: Text Editor Area ────────────────────────────────
+            if (selectedFile.isNotEmpty()) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Editing: ${selectedFile.substringBefore(".txt")}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextCol
+                        )
+                        Text(
+                            text = "Delete File",
+                            fontSize = 11.sp,
+                            color = Red,
+                            modifier = Modifier.clickable {
+                                val fileToDelete = selectedFile
+                                com.example.synergyclient.data.NotesManager.deleteFile(context, fileToDelete)
+                                com.example.synergyclient.network.NotesWebServer.activeInstance?.syncWithPeers(fileToDelete, "", true)
+                                selectedFile = ""
+                                loadFiles()
+                                refreshEditor()
+                            }
+                        )
+                    }
+
+                    val editorBg = noteColors[selectedColor]?.copy(alpha = 0.08f) ?: Bg
+
+                    OutlinedTextField(
+                        value = editorContent,
+                        onValueChange = {
+                            editorContent = it
+                            val toSave = "#color:$selectedColor\n$it"
+                            com.example.synergyclient.data.NotesManager.saveFile(context, selectedFile, toSave)
+                            com.example.synergyclient.network.NotesWebServer.activeInstance?.syncWithPeers(selectedFile, toSave, false)
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Accent, unfocusedBorderColor = Border,
+                            focusedTextColor = TextCol, unfocusedTextColor = TextCol,
+                            unfocusedContainerColor = editorBg, focusedContainerColor = editorBg
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 120.dp, max = 220.dp),
+                        singleLine = false
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Flowport Editor", editorContent))
+                                com.example.synergyclient.data.NotesManager.addClipItem(context, editorContent)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Accent),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("SYNC TO MAC (COPY)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
+                }
+            }
+
+            // ── Section 4: Clipboard History List ──────────────────────────
+            if (clips.isNotEmpty()) {
+                HorizontalDivider(color = Border, thickness = 1.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Clipboard History (Click to Sync)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TextCol)
+                    Text(
+                        text = "Clear History",
+                        fontSize = 11.sp,
+                        color = Red,
+                        modifier = Modifier.clickable {
+                            com.example.synergyclient.data.NotesManager.clearClipHistory(context)
+                            clips = emptyList()
+                        }
+                    )
+                }
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    clips.take(5).forEach { clip ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Bg)
+                                .border(1.dp, Border, RoundedCornerShape(8.dp))
+                                .clickable {
+                                    val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                    cm.setPrimaryClip(android.content.ClipData.newPlainText("Flowport History", clip))
+                                }
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = clip,
+                                fontSize = 11.sp,
+                                color = Muted,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                 }
             }
         }
