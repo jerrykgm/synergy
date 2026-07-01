@@ -269,32 +269,27 @@ class SynergyAccessibilityService : AccessibilityService() {
         val cx = cursorX.toFloat()
         val cy = cursorY.toFloat()
 
-        // 1) Try gesture-based long press at cursor location (works in all apps)
+        // 1) Gesture-based long-press at cursor location (works in all views/browsers)
         val path = Path().apply { moveTo(cx, cy) }
-        val longPressDuration = 600L // ms — Android threshold is ~500ms
-        val gestureDispatched = dispatchGestureOnActiveDisplay(
+        dispatchGestureOnActiveDisplay(
             GestureDescription.Builder()
-                .addStroke(GestureDescription.StrokeDescription(path, 0, longPressDuration))
+                .addStroke(GestureDescription.StrokeDescription(path, 0, 600L))
         )
 
-        // 2) Fallback: accessibility ACTION_LONG_CLICK on the focused node
-        //    (useful in text fields when the gesture is intercepted by the IME)
-        if (!gestureDispatched) {
-            mainHandler.postDelayed({
-                try {
-                    val root = rootInActiveWindow
-                    if (root != null) {
-                        val node = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-                            ?: root.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
-                        node?.let {
-                            it.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)
-                            it.recycle()
-                        }
-                        root.recycle()
-                    }
-                } catch (_: Exception) {}
-            }, 100)
-        }
+        // 2) Accessibility ACTION_LONG_CLICK fallback for text fields where
+        //    the gesture may be intercepted by the IME — fires 700ms after gesture
+        mainHandler.postDelayed({
+            try {
+                val root = rootInActiveWindow ?: return@postDelayed
+                val node = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                    ?: root.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
+                node?.let {
+                    it.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)
+                    it.recycle()
+                }
+                root.recycle()
+            } catch (_: Exception) {}
+        }, 700L)
     }
 
     fun handleMouseUp() {
