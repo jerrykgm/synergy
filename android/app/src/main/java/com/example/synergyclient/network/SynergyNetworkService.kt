@@ -304,10 +304,11 @@ class SynergyNetworkService(
                 if (btn == 1) {
                     svc?.handleMouseDown()
                 } else if (btn == 2) {
-                    // Right Click -> Back Action
-                    svc?.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                    // Right-click → long-press gesture at cursor = shows native context menu
+                    // (copy / paste / select / share) exactly like desktop right-click
+                    svc?.handleRightClick()
                 } else if (btn == 3) {
-                    // Middle Click -> Home Action
+                    // Middle Click → Home Action
                     svc?.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
                 }
             }
@@ -455,6 +456,27 @@ class SynergyNetworkService(
             log("→ DINF ${w}x${h}")
         } catch (e: Exception) {
             log("DINF error: ${e.message}")
+        }
+    }
+
+    // ── CFFF (Force Focus) sender ─────────────────────────────────────────
+
+    fun sendForceFocus(out: DataOutputStream? = outputStream) {
+        if (out == null) return
+        try {
+            val data = ByteArray(4)
+            data[0] = 'C'.code.toByte()
+            data[1] = 'F'.code.toByte()
+            data[2] = 'F'.code.toByte()
+            data[3] = 'F'.code.toByte()
+            synchronized(out) {
+                out.writeInt(data.size)
+                out.write(data)
+                out.flush()
+            }
+            log("→ CFFF (Force Focus)")
+        } catch (e: Exception) {
+            log("Force Focus send error: ${e.message}")
         }
     }
 

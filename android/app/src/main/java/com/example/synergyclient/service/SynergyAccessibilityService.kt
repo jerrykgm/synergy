@@ -151,8 +151,12 @@ class SynergyAccessibilityService : AccessibilityService() {
         }
     }
 
+    // Last time we sent a force-focus packet — used to debounce touch events
+    @Volatile private var lastForceFocusMs = 0L
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
+
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 synchronized(textBuffer) {
@@ -163,6 +167,21 @@ class SynergyAccessibilityService : AccessibilityService() {
             }
             AccessibilityEvent.TYPE_VIEW_FOCUSED,
             AccessibilityEvent.TYPE_VIEW_CLICKED -> {
+                // Auto-Focus on Touch: only fire on actual user touches, debounced to 500ms
+                // to avoid flooding the server with CFFF packets on every accessibility event
+                val now = System.currentTimeMillis()
+                if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED &&
+                    now - lastForceFocusMs > 500L) {
+                    try {
+                        val prefs = getSharedPreferences("synergy_prefs", MODE_PRIVATE)
+                        if (prefs.getBoolean("force_focus_client", true)) {
+                            com.example.synergyclient.network.SynergyForegroundService
+                                .instance?.networkService?.sendForceFocus()
+                            lastForceFocusMs = now
+                        }
+                    } catch (_: Exception) {}
+                }
+
                 val src = event.source ?: return
                 if (src.isEditable) {
                     val existing = getNodeText(src)
@@ -238,6 +257,44 @@ class SynergyAccessibilityService : AccessibilityService() {
         dragStartY = cy
         dragStartTime = System.currentTimeMillis()
         isMouseDown = true
+    }
+
+    /**
+     * Right-click handler: performs a long-press at the cursor position.
+     * On Android, a long-press is the universal way to open context menus
+     * (Copy / Paste / Cut / Select All / Share / etc.) in ANY app — text fields,
+     * browsers, images, links. This mirrors desktop right-click behaviour seamlessly.
+     */
+    fun handleRightClick() {
+        val cx = cursorX.toFloat()
+        val cy = cursorY.toFloat()
+
+        // 1) Try gesture-based long press at cursor location (works in all apps)
+        val path = Path().apply { moveTo(cx, cy) }
+        val longPressDuration = 600L // ms — Android threshold is ~500ms
+        val gestureDispatched = dispatchGestureOnActiveDisplay(
+            GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(path, 0, longPressDuration))
+        )
+
+        // 2) Fallback: accessibility ACTION_LONG_CLICK on the focused node
+        //    (useful in text fields when the gesture is intercepted by the IME)
+        if (!gestureDispatched) {
+            mainHandler.postDelayed({
+                try {
+                    val root = rootInActiveWindow
+                    if (root != null) {
+                        val node = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                            ?: root.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
+                        node?.let {
+                            it.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)
+                            it.recycle()
+                        }
+                        root.recycle()
+                    }
+                } catch (_: Exception) {}
+            }, 100)
+        }
     }
 
     fun handleMouseUp() {
@@ -498,103 +555,148 @@ class SynergyAccessibilityService : AccessibilityService() {
                 // Fall through for regular Alt combos that produce printable chars
             }
 
+            // Get the IME instance once — prefer IME KeyEvent injection because it works
+            // in ALL apps (browsers, games, non-editable views) unlike Accessibility Actions
+            val ime = SynergyInputMethodService.instance
+
             when (keyId) {
                 // ── Standard control chars ────────────────────────────────
                 0xFF08, 0xEF08, 0x0008               -> deleteLastChar()
                 0xFF0D, 0xFF8D, 0xEF0D, 0xEF8D,
                 0x000D, 0x000A                        -> triggerEnterKey()
                 0xFF09, 0x0009                        -> triggerTab(isShift)
-                0xFF1B, 0x001B                        -> performGlobalAction(GLOBAL_ACTION_BACK)
+                0xFF1B, 0x001B                        -> {
+                    // Escape: try IME first (works in all apps), fall back to system Back
+                    if (ime != null) ime.sendEscape()
+                    else performGlobalAction(GLOBAL_ACTION_BACK)
+                }
                 0xFFFF, 0xFF9F, 0xEF9F               -> deleteForwardChar()
 
-                // ── Arrow keys (bare, no modifier) ───────────────────────
+                // ── Arrow keys ────────────────────────────────────────────
+                // IME KeyEvent injection works universally (text fields, browsers, games)
+                // Accessibility granularity movement kept as fallback when IME disconnected
                 0xFF51 -> { // Left
-                    val args = Bundle()
-                    args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
-                        AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER)
-                    args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
-                    focusedEditable()?.let { node ->
-                        node.performAction(AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY, args)
-                        node.recycle()
+                    if (ime != null) {
+                        ime.sendArrowLeft(isShift)
+                    } else {
+                        val args = Bundle()
+                        args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                            AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER)
+                        args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
+                        focusedEditable()?.let { node ->
+                            node.performAction(AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY, args)
+                            node.recycle()
+                        }
                     }
                 }
                 0xFF53 -> { // Right
-                    val args = Bundle()
-                    args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
-                        AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER)
-                    args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
-                    focusedEditable()?.let { node ->
-                        node.performAction(AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY, args)
-                        node.recycle()
+                    if (ime != null) {
+                        ime.sendArrowRight(isShift)
+                    } else {
+                        val args = Bundle()
+                        args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                            AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER)
+                        args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
+                        focusedEditable()?.let { node ->
+                            node.performAction(AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY, args)
+                            node.recycle()
+                        }
                     }
                 }
                 0xFF52 -> { // Up
-                    val args = Bundle()
-                    args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
-                        AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE)
-                    args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
-                    focusedEditable()?.let { node ->
-                        node.performAction(AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY, args)
-                        node.recycle()
+                    if (ime != null) {
+                        ime.sendArrowUp(isShift)
+                    } else {
+                        val args = Bundle()
+                        args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                            AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE)
+                        args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
+                        focusedEditable()?.let { node ->
+                            node.performAction(AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY, args)
+                            node.recycle()
+                        }
                     }
                 }
                 0xFF54 -> { // Down
-                    val args = Bundle()
-                    args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
-                        AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE)
-                    args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
-                    focusedEditable()?.let { node ->
-                        node.performAction(AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY, args)
-                        node.recycle()
+                    if (ime != null) {
+                        ime.sendArrowDown(isShift)
+                    } else {
+                        val args = Bundle()
+                        args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                            AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE)
+                        args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
+                        focusedEditable()?.let { node ->
+                            node.performAction(AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY, args)
+                            node.recycle()
+                        }
                     }
                 }
 
                 // ── Home / End keys ───────────────────────────────────────
-                0xFF50, 0xEF50 -> { // Home → line start
-                    val args = Bundle()
-                    args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
-                        AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE)
-                    args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
-                    focusedEditable()?.let { node ->
-                        node.performAction(AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY, args)
-                        node.recycle()
+                0xFF50, 0xEF50 -> { // Home
+                    if (ime != null) ime.sendHome(isShift)
+                    else {
+                        val args = Bundle()
+                        args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                            AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE)
+                        args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
+                        focusedEditable()?.let { node ->
+                            node.performAction(AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY, args)
+                            node.recycle()
+                        }
                     }
                 }
-                0xFF57, 0xEF57 -> { // End → line end
-                    val args = Bundle()
-                    args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
-                        AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE)
-                    args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
-                    focusedEditable()?.let { node ->
-                        node.performAction(AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY, args)
-                        node.recycle()
+                0xFF57, 0xEF57 -> { // End
+                    if (ime != null) ime.sendEnd(isShift)
+                    else {
+                        val args = Bundle()
+                        args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                            AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE)
+                        args.putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, isShift)
+                        focusedEditable()?.let { node ->
+                            node.performAction(AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY, args)
+                            node.recycle()
+                        }
                     }
                 }
 
                 // ── Page Up / Page Down ───────────────────────────────────
-                0xFF55, 0xEF55 -> { // Page Up → scroll gesture
-                    val sw = screenW().toFloat()
-                    val sh = screenH().toFloat()
-                    val p = Path().apply { moveTo(sw / 2, sh * 0.25f); lineTo(sw / 2, sh * 0.75f) }
-                    dispatchGestureOnActiveDisplay(GestureDescription.Builder()
-                        .addStroke(GestureDescription.StrokeDescription(p, 0, 100)))
+                // IME KeyEvent first (works in scrollable views); gesture scroll as fallback
+                0xFF55, 0xEF55 -> { // Page Up
+                    if (ime != null) {
+                        ime.sendPageUp(isShift)
+                    } else {
+                        val sw = screenW().toFloat(); val sh = screenH().toFloat()
+                        val p = Path().apply { moveTo(sw / 2, sh * 0.25f); lineTo(sw / 2, sh * 0.75f) }
+                        dispatchGestureOnActiveDisplay(GestureDescription.Builder()
+                            .addStroke(GestureDescription.StrokeDescription(p, 0, 100)))
+                    }
                 }
-                0xFF56, 0xEF56 -> { // Page Down → scroll gesture
-                    val sw = screenW().toFloat()
-                    val sh = screenH().toFloat()
-                    val p = Path().apply { moveTo(sw / 2, sh * 0.75f); lineTo(sw / 2, sh * 0.25f) }
-                    dispatchGestureOnActiveDisplay(GestureDescription.Builder()
-                        .addStroke(GestureDescription.StrokeDescription(p, 0, 100)))
+                0xFF56, 0xEF56 -> { // Page Down
+                    if (ime != null) {
+                        ime.sendPageDown(isShift)
+                    } else {
+                        val sw = screenW().toFloat(); val sh = screenH().toFloat()
+                        val p = Path().apply { moveTo(sw / 2, sh * 0.75f); lineTo(sw / 2, sh * 0.25f) }
+                        dispatchGestureOnActiveDisplay(GestureDescription.Builder()
+                            .addStroke(GestureDescription.StrokeDescription(p, 0, 100)))
+                    }
                 }
 
-                // ── Function keys ─────────────────────────────────────────
-                0xFFBE -> performGlobalAction(GLOBAL_ACTION_BACK)                // F1
-                0xFFBF -> performGlobalAction(GLOBAL_ACTION_HOME)                // F2
-                0xFFC0 -> performGlobalAction(GLOBAL_ACTION_RECENTS)             // F3
-                0xFFC1 -> performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)       // F4
-                0xFFC2 -> performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)      // F5
-                // F6–F12 silently ignored (no Android equivalent)
-                in 0xFFC3..0xFFC9 -> { /* F7-F12 no-op */ }
+                // ── Function keys F1–F12 ──────────────────────────────────
+                // IME sends real F-key events; fallback to Android system actions
+                0xFFBE -> if (ime != null) ime.sendFunctionKey(1)  else performGlobalAction(GLOBAL_ACTION_BACK)         // F1
+                0xFFBF -> if (ime != null) ime.sendFunctionKey(2)  else performGlobalAction(GLOBAL_ACTION_HOME)         // F2
+                0xFFC0 -> if (ime != null) ime.sendFunctionKey(3)  else performGlobalAction(GLOBAL_ACTION_RECENTS)      // F3
+                0xFFC1 -> if (ime != null) ime.sendFunctionKey(4)  else performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS) // F4
+                0xFFC2 -> if (ime != null) ime.sendFunctionKey(5)  else performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)// F5
+                0xFFC3 -> ime?.sendFunctionKey(6)   // F6
+                0xFFC4 -> ime?.sendFunctionKey(7)   // F7
+                0xFFC5 -> ime?.sendFunctionKey(8)   // F8
+                0xFFC6 -> ime?.sendFunctionKey(9)   // F9
+                0xFFC7 -> ime?.sendFunctionKey(10)  // F10
+                0xFFC8 -> ime?.sendFunctionKey(11)  // F11
+                0xFFC9 -> ime?.sendFunctionKey(12)  // F12
 
                 // ── Keypad numbers and operators ─────────────────────────
                 in 0xFFB0..0xFFB9                     -> insertChar((keyId - 0xFFB0 + '0'.code).toChar())

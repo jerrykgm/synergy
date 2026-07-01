@@ -193,6 +193,9 @@ void MainWindow::setupControls()
 
 #endif
   loadNotes();
+
+  bool forceFocus = m_Settings.get("forceFocus", true).toBool();
+  m_pCheckForceFocus->setChecked(forceFocus);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -301,6 +304,10 @@ void MainWindow::connectSlots()
     m_pLabelNotesStatus->setText("Status: Imported");
   });
   connect(QGuiApplication::clipboard(), &QClipboard::dataChanged, this, &MainWindow::onClipboardChanged);
+  connect(m_pCheckForceFocus, &QCheckBox::toggled, this, [this](bool checked) {
+    m_Settings.set("forceFocus", checked);
+    m_Settings.sync();
+  });
 }
 
 

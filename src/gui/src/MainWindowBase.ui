@@ -582,19 +582,32 @@
              </property>
             </widget>
            </item>
-           <item>
-            <widget class="QCheckBox" name="m_pCheckAutoSync">
-             <property name="text">
-              <string>Auto-Sync</string>
-             </property>
-             <property name="toolTip">
-              <string>Automatically import shared notes when they are updated on other computers</string>
-             </property>
-             <property name="checked">
-              <bool>true</bool>
-             </property>
-            </widget>
-           </item>
+            <item>
+             <widget class="QCheckBox" name="m_pCheckAutoSync">
+              <property name="text">
+               <string>Auto-Sync</string>
+              </property>
+              <property name="toolTip">
+               <string>Automatically import shared notes when they are updated on other computers</string>
+              </property>
+              <property name="checked">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="m_pCheckForceFocus">
+              <property name="text">
+               <string>Force Focus (Touch/Keys)</string>
+              </property>
+              <property name="toolTip">
+               <string>Force client focus via physical keys, shortcuts, or client touchscreen events</string>
+              </property>
+              <property name="checked">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
            <item>
             <widget class="QLabel" name="m_pLabelNotesStatus">
              <property name="text">

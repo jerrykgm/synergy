@@ -25,6 +25,7 @@
 #include <QAbstractButton>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QSettings>
 #include <QtCore>
 
 using namespace deskflow::gui::proxy;
@@ -271,6 +272,11 @@ QTextStream &operator<<(QTextStream &outStream, const ServerConfig &config)
   outStream << "end" << Qt::endl << Qt::endl;
 
   outStream << "section: options" << Qt::endl;
+
+  QSettings settings;
+  bool forceFocus = settings.value("forceFocus", true).toBool();
+  outStream << "\t"
+            << "forceFocus = " << (forceFocus ? "true" : "false") << Qt::endl;
 
   if (config.hasHeartbeat())
     outStream << "\t"
