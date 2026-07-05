@@ -27,6 +27,7 @@
 #include "server/Server.h"
 
 #include <cstdlib>
+#include <vector>
 
 using namespace deskflow::string;
 
@@ -566,6 +567,7 @@ void Config::read(ConfigReadContext &context)
   while (context.getStream()) {
     tmp.readSection(context);
   }
+  tmp.addBidirectionalLinks();
   *this = tmp;
 }
 
@@ -699,6 +701,8 @@ void Config::readSectionOptions(ConfigReadContext &s)
       addOption("", kOptionClipboardSharing, s.parseBoolean(value));
     } else if (name == "clipboardSharingSize") {
       addOption("", kOptionClipboardSharingSize, s.parseInt(value));
+    } else if (name == "ignoreInjectedEvents") {
+      addOption("", kOptionIgnoreInjectedEvents, s.parseBoolean(value));
     } else if (name == "clientAddress") {
       m_ClientAddress = value;
     } else {
@@ -1268,6 +1272,9 @@ const char *Config::getOptionName(OptionID id)
   if (id == kOptionClipboardSharingSize) {
     return "clipboardSharingSize";
   }
+  if (id == kOptionIgnoreInjectedEvents) {
+    return "ignoreInjectedEvents";
+  }
   return NULL;
 }
 
@@ -1277,7 +1284,7 @@ String Config::getOptionValue(OptionID id, OptionValue value)
       id == kOptionScreenSwitchNeedsShift || id == kOptionScreenSwitchNeedsControl ||
       id == kOptionScreenSwitchNeedsAlt || id == kOptionXTestXineramaUnaware || id == kOptionRelativeMouseMoves ||
       id == kOptionWin32KeepForeground || id == kOptionScreenPreserveFocus || id == kOptionClipboardSharing ||
-      id == kOptionClipboardSharingSize) {
+      id == kOptionClipboardSharingSize || id == kOptionIgnoreInjectedEvents) {
     return (value != 0) ? "true" : "false";
   }
   if (id == kOptionModifierMapForShift || id == kOptionModifierMapForControl || id == kOptionModifierMapForAlt ||
@@ -2102,6 +2109,73 @@ XConfigRead::~XConfigRead() _NOEXCEPT
 String XConfigRead::getWhat() const throw()
 {
   return format("XConfigRead", "read error: %{1}", m_error.c_str());
+}
+
+void Config::addBidirectionalLinks()
+{
+  struct PendingLink {
+    String srcName;
+    EDirection srcSide;
+    float srcStart;
+    float srcEnd;
+    String dstName;
+    float dstStart;
+    float dstEnd;
+  };
+  std::vector<PendingLink> reverseLinks;
+
+  for (CellMap::iterator i = m_map.begin(); i != m_map.end(); ++i) {
+    const String& srcName = i->first;
+    const Cell& srcCell = i->second;
+    for (Cell::const_iterator j = srcCell.begin(); j != srcCell.end(); ++j) {
+      const CellEdge& srcEdge = j->first;
+      const CellEdge& dstEdge = j->second;
+
+      String dstName = dstEdge.getName();
+      EDirection srcSide = srcEdge.getSide();
+      EDirection dstSide = kNoDirection;
+      switch (srcSide) {
+        case kLeft:   dstSide = kRight;  break;
+        case kRight:  dstSide = kLeft;   break;
+        case kTop:    dstSide = kBottom; break;
+        case kBottom: dstSide = kTop;    break;
+        default:      break;
+      }
+
+      if (dstSide == kNoDirection) {
+        continue;
+      }
+
+      Interval srcInterval = srcEdge.getInterval();
+      Interval dstInterval = dstEdge.getInterval();
+
+      // Find destination cell
+      CellMap::const_iterator dstIter = m_map.find(dstName);
+      if (dstIter == m_map.end()) {
+        continue;
+      }
+
+      // Check if there is already an overlapping link on dstCell's opposite side
+      CellEdge reverseSrcEdge(dstSide, dstInterval);
+      if (!dstIter->second.overlaps(reverseSrcEdge)) {
+        PendingLink link;
+        link.srcName = dstName;
+        link.srcSide = dstSide;
+        link.srcStart = dstInterval.first;
+        link.srcEnd = dstInterval.second;
+        link.dstName = srcName;
+        link.dstStart = srcInterval.first;
+        link.dstEnd = srcInterval.second;
+        reverseLinks.push_back(link);
+      }
+    }
+  }
+
+  // Now connect the gathered reverse links
+  for (size_t i = 0; i < reverseLinks.size(); ++i) {
+    const PendingLink& link = reverseLinks[i];
+    connect(link.srcName, link.srcSide, link.srcStart, link.srcEnd, link.dstName, link.dstStart, link.dstEnd);
+  }
 }
 
 } // namespace deskflow::server

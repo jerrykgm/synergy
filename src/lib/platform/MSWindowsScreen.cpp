@@ -23,6 +23,7 @@
 #include "base/IEventQueue.h"
 #include "base/Log.h"
 #include "base/String.h"
+#include "deskflow/option_types.h"
 #include "base/TMethodEventJob.h"
 #include "base/TMethodJob.h"
 #include "client/Client.h"
@@ -476,6 +477,11 @@ void MSWindowsScreen::resetOptions()
 void MSWindowsScreen::setOptions(const OptionsList &options)
 {
   m_desks->setOptions(options);
+  for (UInt32 i = 0, n = (UInt32)options.size(); i < n; i += 2) {
+    if (options[i] == kOptionIgnoreInjectedEvents) {
+      m_hook.setIsPrimary(options[i + 1] == 0);
+    }
+  }
 }
 
 void MSWindowsScreen::setSequenceNumber(UInt32 seqNum)

@@ -148,6 +148,11 @@ void MSWindowsHook::setMode(EHookMode mode)
   g_mode = mode;
 }
 
+void MSWindowsHook::setIsPrimary(bool isPrimary)
+{
+  g_isPrimary = isPrimary ? TRUE : FALSE;
+}
+
 static void keyboardGetState(BYTE keys[256], DWORD vkCode, bool kf_up)
 {
   // we have to use GetAsyncKeyState() rather than GetKeyState() because

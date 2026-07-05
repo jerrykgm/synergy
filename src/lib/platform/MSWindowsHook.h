@@ -42,6 +42,8 @@ public:
 
   void setMode(EHookMode mode);
 
+  void setIsPrimary(bool isPrimary);
+
   static EHookResult install();
 
   static int uninstall();

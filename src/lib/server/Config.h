@@ -494,6 +494,7 @@ private:
   void readSectionScreens(ConfigReadContext &);
   void readSectionLinks(ConfigReadContext &);
   void readSectionAliases(ConfigReadContext &);
+  void addBidirectionalLinks();
 
   InputFilter::Condition *parseCondition(ConfigReadContext &, const String &condition, const std::vector<String> &args);
   void parseAction(
