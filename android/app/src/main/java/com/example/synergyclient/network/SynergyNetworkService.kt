@@ -485,8 +485,15 @@ class SynergyNetworkService(
     private fun getScreenSize(): Pair<Int, Int> {
         val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         return try {
-            val b = wm.currentWindowMetrics.bounds
-            Pair(b.width(), b.height())
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                val b = wm.currentWindowMetrics.bounds
+                Pair(b.width(), b.height())
+            } else {
+                val display = wm.defaultDisplay
+                val realSize = android.graphics.Point()
+                display.getRealSize(realSize)
+                Pair(realSize.x, realSize.y)
+            }
         } catch (_: Exception) {
             val dm = context.resources.displayMetrics
             Pair(dm.widthPixels, dm.heightPixels)
