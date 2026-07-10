@@ -983,8 +983,15 @@ class SynergyAccessibilityService : AccessibilityService() {
      * Used for BOTH cursor clamping AND DINF so coordinates stay consistent.
      */
     fun getFullScreenSize(): Pair<Int, Int> = try {
-        val b = windowManager.currentWindowMetrics.bounds
-        Pair(b.width(), b.height())
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            val b = windowManager.currentWindowMetrics.bounds
+            Pair(b.width(), b.height())
+        } else {
+            val display = windowManager.defaultDisplay
+            val realSize = android.graphics.Point()
+            display.getRealSize(realSize)
+            Pair(realSize.x, realSize.y)
+        }
     } catch (_: Exception) {
         val dm = resources.displayMetrics
         Pair(dm.widthPixels, dm.heightPixels)
