@@ -110,43 +110,13 @@ class SynergyAccessibilityService : AccessibilityService() {
                 info.flags = info.flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_REQUEST_ENHANCED_WEB_ACCESSIBILITY
                 serviceInfo = info
             } catch (_: Exception) {}
-                softKeyboardController.addOnShowModeChangedListener { controller, mode ->
-                    val autoHide = sharedPrefs?.getBoolean("auto_hide_keyboard", true) ?: true
-                    if (isSynergyActive && autoHide && mode != SHOW_MODE_HIDDEN) {
-                        mainHandler.post {
-                            try { controller.showMode = SHOW_MODE_HIDDEN } catch (_: Exception) {}
-                        }
+            softKeyboardController.addOnShowModeChangedListener { controller, mode ->
+                val autoHide = sharedPrefs?.getBoolean("auto_hide_keyboard", true) ?: true
+                if (isSynergyActive && autoHide && mode != SHOW_MODE_HIDDEN) {
+                    mainHandler.post {
+                        try { controller.showMode = SHOW_MODE_HIDDEN } catch (_: Exception) {}
                     }
                 }
-        }
-
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            // Leave a 4px gap at the top and bottom edges so the OS edge-swipe gesture triggers
-            // (e.g. notifications drawer, navigation bar) bypass the transparent accessibility overlay.
-            val screenHeight = getFullScreenSize().second
-            y = 4
-            height = (screenHeight - 8).coerceAtLeast(100)
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-            }
-        }
-
-        mainHandler.post {
-            try {
-                windowManager.addView(overlayView, params)
-                android.util.Log.i("SynergyApp", "Cursor overlay added")
-            } catch (e: Exception) {
-                android.util.Log.e("SynergyApp", "Failed to add overlay: ${e.message}", e)
             }
         }
     }
