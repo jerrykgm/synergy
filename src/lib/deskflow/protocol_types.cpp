@@ -30,6 +30,7 @@ const char *const kMsgCScreenSaver = "CSEC%1i";
 const char *const kMsgCResetOptions = "CROP";
 const char *const kMsgCInfoAck = "CIAK";
 const char *const kMsgCKeepAlive = "CALV";
+const char *const kMsgCForceFocus = "CFFF";
 const char *const kMsgDKeyDownLang = "DKDL%2i%2i%2i%s";
 const char *const kMsgDKeyDown = "DKDN%2i%2i%2i";
 const char *const kMsgDKeyDown1_0 = "DKDN%2i%2i";

@@ -703,6 +703,8 @@ void Config::readSectionOptions(ConfigReadContext &s)
       addOption("", kOptionClipboardSharingSize, s.parseInt(value));
     } else if (name == "ignoreInjectedEvents") {
       addOption("", kOptionIgnoreInjectedEvents, s.parseBoolean(value));
+    } else if (name == "forceFocus") {
+      addOption("", kOptionForceFocus, s.parseBoolean(value));
     } else if (name == "clientAddress") {
       m_ClientAddress = value;
     } else {

@@ -192,6 +192,10 @@ void MainWindow::setupControls()
   m_pRadioGroupClient->setAttribute(Qt::WA_MacShowFocusRect, 0);
 
 #endif
+  loadNotes();
+
+  bool forceFocus = m_Settings.get("forceFocus", true).toBool();
+  m_pCheckForceFocus->setChecked(forceFocus);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -277,6 +281,33 @@ void MainWindow::connectSlots()
   // Network discovery signals
   connect(&m_NetworkDiscovery, &NetworkDiscovery::serverDiscovered, this, &MainWindow::onServerDiscovered);
   connect(&m_NetworkDiscovery, &NetworkDiscovery::serverLost,       this, &MainWindow::onServerLost);
+
+  // Notes synchronization and controls
+  connect(m_pNotesOutput, &QPlainTextEdit::textChanged, this, &MainWindow::saveNotes);
+  connect(m_pButtonClearNotes, &QPushButton::clicked, this, [this]() {
+    m_pNotesOutput->clear();
+    m_pLabelNotesStatus->setText("Status: Cleared");
+  });
+  connect(m_pButtonShareNotes, &QPushButton::clicked, this, [this]() {
+    QClipboard *clipboard = QGuiApplication::clipboard();
+    QString noteText = "[Synergy Shared Note]\n" + m_pNotesOutput->toPlainText();
+    clipboard->setText(noteText);
+    m_pLabelNotesStatus->setText("Status: Shared");
+  });
+  connect(m_pButtonImportNotes, &QPushButton::clicked, this, [this]() {
+    QClipboard *clipboard = QGuiApplication::clipboard();
+    QString text = clipboard->text();
+    if (text.startsWith("[Synergy Shared Note]\n")) {
+      text = text.mid(QString("[Synergy Shared Note]\n").length());
+    }
+    m_pNotesOutput->setPlainText(text);
+    m_pLabelNotesStatus->setText("Status: Imported");
+  });
+  connect(QGuiApplication::clipboard(), &QClipboard::dataChanged, this, &MainWindow::onClipboardChanged);
+  connect(m_pCheckForceFocus, &QCheckBox::toggled, this, [this](bool checked) {
+    m_Settings.set("forceFocus", checked);
+    m_Settings.sync();
+  });
 }
 
 
@@ -1247,5 +1278,41 @@ void MainWindow::daemonIpcClientconnectionFailed()
 {
   if (deskflow::gui::messages::showDaemonOffline(this)) {
     m_CoreProcess.retryDaemon();
+  }
+}
+
+void MainWindow::loadNotes()
+{
+  QString path = QDir::homePath() + "/synergy_notes.txt";
+  QFile file(path);
+  if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    QTextStream in(&file);
+    m_pNotesOutput->setPlainText(in.readAll());
+  }
+}
+
+void MainWindow::saveNotes()
+{
+  QString path = QDir::homePath() + "/synergy_notes.txt";
+  QFile file(path);
+  if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+    QTextStream out(&file);
+    out << m_pNotesOutput->toPlainText();
+  }
+}
+
+void MainWindow::onClipboardChanged()
+{
+  if (!m_pCheckAutoSync->isChecked()) {
+    return;
+  }
+  QClipboard *clipboard = QGuiApplication::clipboard();
+  QString text = clipboard->text();
+  if (text.startsWith("[Synergy Shared Note]\n")) {
+    QString actualNote = text.mid(QString("[Synergy Shared Note]\n").length());
+    if (m_pNotesOutput->toPlainText() != actualNote) {
+      m_pNotesOutput->setPlainText(actualNote);
+      m_pLabelNotesStatus->setText("Status: Synced");
+    }
   }
 }

@@ -126,7 +126,7 @@ int main(int argc, char *argv[])
       background-color: #ff9d33;
     }
     QRadioButton:disabled {
-      color: #686c80;
+      color: #8c91a5;
     }
 
     /* --- Group Boxes --- */
@@ -180,7 +180,7 @@ int main(int argc, char *argv[])
     }
     QPushButton:disabled {
       background: #252631;
-      color: #555866;
+      color: #8c91a5;
     }
 
     /* --- Line Edits --- */
@@ -200,8 +200,24 @@ int main(int argc, char *argv[])
     }
     QLineEdit:disabled {
       background-color: #121319;
-      color: #555866;
+      color: #8c91a5;
       border-color: #1f202b;
+    }
+
+    /* --- Table / List / Tree Views --- */
+    QTableView, QTreeView, QListView, QListWidget {
+      background-color: #12131a;
+      gridline-color: #282a36;
+      border: 1px solid #282a36;
+      border-radius: 8px;
+      color: #f1f2f6;
+    }
+    QTableView::item, QTreeView::item, QListView::item, QListWidget::item {
+      color: #f1f2f6;
+    }
+    QTableView::item:selected, QTreeView::item:selected, QListView::item:selected, QListWidget::item:selected {
+      background-color: #ff7200;
+      color: #ffffff;
     }
 
     /* --- Labels --- */
@@ -290,6 +306,11 @@ int main(int argc, char *argv[])
     }
     QComboBox:focus {
       border-color: #ff7200;
+    }
+    QComboBox:disabled {
+      background-color: #121319;
+      color: #8c91a5;
+      border-color: #1f202b;
     }
     QComboBox::drop-down {
       border: none;

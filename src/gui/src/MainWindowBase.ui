@@ -478,58 +478,153 @@
      </widget>
     </item>
     <item>
-     <widget class="QGroupBox" name="m_pGroupLog">
-      <property name="minimumSize">
-       <size>
-        <width>0</width>
-        <height>0</height>
-       </size>
+     <widget class="QTabWidget" name="m_pTabWidgetMain">
+      <property name="currentIndex">
+       <number>0</number>
       </property>
-      <property name="title">
-       <string>Logs</string>
-      </property>
-      <layout class="QVBoxLayout" name="verticalLayout_4">
-       <property name="leftMargin">
-        <number>8</number>
-       </property>
-       <property name="topMargin">
-        <number>8</number>
-       </property>
-       <property name="rightMargin">
-        <number>8</number>
-       </property>
-       <property name="bottomMargin">
-        <number>8</number>
-       </property>
-       <item>
-        <widget class="QPlainTextEdit" name="m_pLogOutput">
-         <property name="sizePolicy">
-          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-           <horstretch>0</horstretch>
-           <verstretch>0</verstretch>
-          </sizepolicy>
-         </property>
-         <property name="font">
-          <font>
-           <family>Courier</family>
-           <kerning>true</kerning>
-          </font>
-         </property>
-         <property name="undoRedoEnabled">
-          <bool>false</bool>
-         </property>
-         <property name="lineWrapMode">
-          <enum>QPlainTextEdit::NoWrap</enum>
-         </property>
-         <property name="readOnly">
-          <bool>true</bool>
-         </property>
-         <property name="maximumBlockCount">
-          <number>10000</number>
-         </property>
-        </widget>
-       </item>
-      </layout>
+      <widget class="QWidget" name="tab_logs">
+       <attribute name="title">
+        <string>Logs</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="verticalLayout_logs">
+        <property name="leftMargin">
+         <number>4</number>
+        </property>
+        <property name="topMargin">
+         <number>4</number>
+        </property>
+        <property name="rightMargin">
+         <number>4</number>
+        </property>
+        <property name="bottomMargin">
+         <number>4</number>
+        </property>
+        <item>
+         <widget class="QPlainTextEdit" name="m_pLogOutput">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="font">
+           <font>
+            <family>Courier</family>
+            <kerning>true</kerning>
+           </font>
+          </property>
+          <property name="undoRedoEnabled">
+           <bool>false</bool>
+          </property>
+          <property name="lineWrapMode">
+           <enum>QPlainTextEdit::NoWrap</enum>
+          </property>
+          <property name="readOnly">
+           <bool>true</bool>
+          </property>
+          <property name="maximumBlockCount">
+           <number>10000</number>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="tab_notes">
+       <attribute name="title">
+        <string>Notes</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="verticalLayout_notes">
+        <property name="leftMargin">
+         <number>8</number>
+        </property>
+        <property name="topMargin">
+         <number>8</number>
+        </property>
+        <property name="rightMargin">
+         <number>8</number>
+        </property>
+        <property name="bottomMargin">
+         <number>8</number>
+        </property>
+        <item>
+         <widget class="QPlainTextEdit" name="m_pNotesOutput">
+          <property name="placeholderText">
+           <string>Type notes here to access from other computers...</string>
+          </property>
+         </widget>
+        </item>
+         <item>
+          <layout class="QHBoxLayout" name="horizontalLayout_notes_buttons">
+           <item>
+            <widget class="QPushButton" name="m_pButtonShareNotes">
+             <property name="text">
+              <string>Share Note</string>
+             </property>
+             <property name="toolTip">
+              <string>Copy and broadcast this note with a Synergy prefix to sync with other computers</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="m_pButtonImportNotes">
+             <property name="text">
+              <string>Import Note</string>
+             </property>
+             <property name="toolTip">
+              <string>Manually import a shared note from the clipboard</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="m_pButtonClearNotes">
+             <property name="text">
+              <string>Clear</string>
+             </property>
+            </widget>
+           </item>
+            <item>
+             <widget class="QCheckBox" name="m_pCheckAutoSync">
+              <property name="text">
+               <string>Auto-Sync</string>
+              </property>
+              <property name="toolTip">
+               <string>Automatically import shared notes when they are updated on other computers</string>
+              </property>
+              <property name="checked">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="m_pCheckForceFocus">
+              <property name="text">
+               <string>Force Focus (Touch/Keys)</string>
+              </property>
+              <property name="toolTip">
+               <string>Force client focus via physical keys, shortcuts, or client touchscreen events</string>
+              </property>
+              <property name="checked">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+           <item>
+            <widget class="QLabel" name="m_pLabelNotesStatus">
+             <property name="text">
+              <string>Status: Ready</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+             </property>
+             <property name="margin">
+              <number>4</number>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+       </layout>
+      </widget>
      </widget>
     </item>
     <item>

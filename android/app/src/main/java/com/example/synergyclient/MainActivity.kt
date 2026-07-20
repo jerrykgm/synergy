@@ -1,6 +1,7 @@
 package com.example.synergyclient
 
 import android.os.Bundle
+import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -23,6 +24,31 @@ class MainActivity : ComponentActivity() {
     setContent {
       SynergyClientTheme { Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { MainNavigation() } }
     }
+    
+    hideSystemUI()
+  }
+
+  override fun onWindowFocusChanged(hasFocus: Boolean) {
+    super.onWindowFocusChanged(hasFocus)
+    if (hasFocus) {
+      hideSystemUI()
+    }
+  }
+
+  override fun onResume() {
+    super.onResume()
+    hideSystemUI()
+  }
+
+  private fun hideSystemUI() {
+    window.decorView.systemUiVisibility = (
+        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+        or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+        or View.SYSTEM_UI_FLAG_FULLSCREEN
+    )
   }
 
   override fun onDestroy() {
@@ -30,3 +56,4 @@ class MainActivity : ComponentActivity() {
     if (activeInstance == this) activeInstance = null
   }
 }
+

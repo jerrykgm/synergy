@@ -96,6 +96,7 @@ fun MainScreen(
     var autoHideKeyboard by remember { mutableStateOf(prefs.getBoolean("auto_hide_keyboard", true)) }
     var autoHideApp by remember { mutableStateOf(prefs.getBoolean("auto_hide_app", false)) }
     var focusAppOnType by remember { mutableStateOf(prefs.getBoolean("focus_app_on_type", false)) }
+    var forceFocusEnabled by remember { mutableStateOf(prefs.getBoolean("force_focus_client", true)) }
 
     // ── Log ring buffer ────────────────────────────────────────────────────
     val logs      = remember { mutableStateListOf<String>() }
@@ -239,6 +240,7 @@ fun MainScreen(
             putBoolean("mac_server_mode",   isMacServerMode)
             putBoolean("clipboard_sync",    clipboardSyncEnabled)
             putBoolean("focus_app_on_type",  focusAppOnType)
+            putBoolean("force_focus_client", forceFocusEnabled)
             apply()
         }
     }
@@ -275,6 +277,7 @@ fun MainScreen(
 
     fun disconnect() {
         foregroundService?.stopServiceAndConnection()
+        com.example.synergyclient.service.SynergyInputMethodService.instance?.switchToPreviousKeyboard()
     }
 
     fun selectServer(server: DiscoveredServer) {
@@ -368,6 +371,7 @@ fun MainScreen(
             clipboardSyncEnabled = clipboardSyncEnabled,
             autoHideApp     = autoHideApp,
             focusAppOnType  = focusAppOnType,
+            forceFocusEnabled = forceFocusEnabled,
             isConnected     = isConnected,
             isConnecting    = isConnecting,
             onServerIpChange     = { serverIp = it },
@@ -385,7 +389,18 @@ fun MainScreen(
                 focusAppOnType = checked
                 prefs.edit().putBoolean("focus_app_on_type", checked).apply()
             },
+            onForceFocusChange   = { checked ->
+                forceFocusEnabled = checked
+                prefs.edit().putBoolean("force_focus_client", checked).apply()
+            },
             onConnectClick       = { if (isConnected || isConnecting) disconnect() else connect() }
+        )
+
+        // ── Developer, Debugging & Pairing options ────────────────────────
+        val localIp = remember { getLocalIpAddress() }
+        DeveloperCard(
+            context = context,
+            localIp = localIp
         )
 
         // ── Shared Editor & Sticky Notes Action ────────────────────────────
@@ -692,6 +707,7 @@ private fun ConnectionCard(
     clipboardSyncEnabled: Boolean,
     autoHideApp:     Boolean,
     focusAppOnType:  Boolean,
+    forceFocusEnabled: Boolean,
     isConnected:     Boolean,
     isConnecting:    Boolean,
     onServerIpChange:      (String)  -> Unit,
@@ -703,6 +719,7 @@ private fun ConnectionCard(
     onClipboardSyncChange: (Boolean) -> Unit,
     onAutoHideAppChange:   (Boolean) -> Unit,
     onFocusAppChange:      (Boolean) -> Unit,
+    onForceFocusChange:    (Boolean) -> Unit,
     onConnectClick:        () -> Unit,
 ) {
     Surface(
@@ -725,7 +742,10 @@ private fun ConnectionCard(
                 colors   = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor    = Accent, unfocusedBorderColor = Border,
                     focusedTextColor      = TextCol, unfocusedTextColor = TextCol,
-                    focusedLabelColor     = Accent,  unfocusedLabelColor = Muted
+                    disabledTextColor     = TextCol.copy(alpha = 0.6f),
+                    focusedLabelColor     = Accent,  unfocusedLabelColor = Muted,
+                    disabledLabelColor    = Muted.copy(alpha = 0.6f),
+                    disabledBorderColor   = Border.copy(alpha = 0.5f)
                 ),
                 modifier  = Modifier.fillMaxWidth(),
                 enabled   = !isConnected && !isConnecting,
@@ -739,7 +759,10 @@ private fun ConnectionCard(
                     label    = { Text("Port", color = Muted, fontSize = 13.sp) },
                     colors   = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Accent, unfocusedBorderColor = Border,
-                        focusedTextColor = TextCol, unfocusedTextColor = TextCol
+                        focusedTextColor = TextCol, unfocusedTextColor = TextCol,
+                        disabledTextColor = TextCol.copy(alpha = 0.6f),
+                        disabledLabelColor = Muted.copy(alpha = 0.6f),
+                        disabledBorderColor = Border.copy(alpha = 0.5f)
                     ),
                     modifier  = Modifier.weight(1f),
                     enabled   = !isConnected && !isConnecting,
@@ -751,7 +774,10 @@ private fun ConnectionCard(
                     label    = { Text("Screen Name", color = Muted, fontSize = 13.sp) },
                     colors   = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Accent, unfocusedBorderColor = Border,
-                        focusedTextColor = TextCol, unfocusedTextColor = TextCol
+                        focusedTextColor = TextCol, unfocusedTextColor = TextCol,
+                        disabledTextColor = TextCol.copy(alpha = 0.6f),
+                        disabledLabelColor = Muted.copy(alpha = 0.6f),
+                        disabledBorderColor = Border.copy(alpha = 0.5f)
                     ),
                     modifier  = Modifier.weight(2f),
                     enabled   = !isConnected && !isConnecting,
@@ -766,6 +792,7 @@ private fun ConnectionCard(
             ToggleRow("Sync Clipboard",  "Sync clipboard copy-pastes between devices", clipboardSyncEnabled, onClipboardSyncChange)
             ToggleRow("Auto-minimize App", "Send app to background when connected", autoHideApp, onAutoHideAppChange)
             ToggleRow("Focus app on typing", "Focus Synergy client when key is typed", focusAppOnType, onFocusAppChange)
+            ToggleRow("Auto-Focus on Touch", "Touch or typing on this client instantly pulls focus", forceFocusEnabled, onForceFocusChange)
 
             val btnGradient = if (isConnected)
                 Brush.horizontalGradient(listOf(Red, Color(0xFFC0392B)))
@@ -1432,6 +1459,162 @@ private fun TextEditorAndClipCard(
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+private fun getLocalIpAddress(): String {
+    try {
+        val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+        while (interfaces.hasMoreElements()) {
+            val networkInterface = interfaces.nextElement()
+            val addresses = networkInterface.inetAddresses
+            while (addresses.hasMoreElements()) {
+                val address = addresses.nextElement()
+                if (!address.isLoopbackAddress && address is java.net.Inet4Address) {
+                    val ip = address.hostAddress ?: ""
+                    if (ip.isNotEmpty()) return ip
+                }
+            }
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+    return "Unavailable"
+}
+
+@Composable
+private fun DeveloperCard(
+    context: android.content.Context,
+    localIp: String,
+) {
+    Surface(
+        shape    = RoundedCornerShape(12.dp),
+        color    = Card,
+        border   = androidx.compose.foundation.BorderStroke(1.dp, Border),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("DEVELOPER, DEBUGGING & PAIRING", fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                color = Muted, letterSpacing = 1.5.sp)
+
+            // IP Address Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text("Device IP Address", fontSize = 13.sp, color = TextCol)
+                    Text("Your server can connect to this IP", fontSize = 11.sp, color = Muted)
+                }
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = Bg,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Border)
+                ) {
+                    Text(
+                        text = localIp,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        color = Accent,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(1.dp).background(Border).fillMaxWidth())
+
+            // Debugging Buttons Grid/Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // USB Debugging
+                Button(
+                    onClick = {
+                        try {
+                            val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            try {
+                                context.startActivity(android.content.Intent(android.provider.Settings.ACTION_SETTINGS))
+                            } catch (_: Exception) {}
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Accent.copy(alpha = 0.15f)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Accent.copy(alpha = 0.3f))
+                ) {
+                    Text("USB Debugging", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AccentB)
+                }
+
+                // Wireless Debugging
+                Button(
+                    onClick = {
+                        try {
+                            val intent = android.content.Intent("android.settings.WIRELESS_DEBUGGING_SETTINGS")
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            try {
+                                val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+                                context.startActivity(intent)
+                            } catch (_: Exception) {}
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Green.copy(alpha = 0.15f)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Green.copy(alpha = 0.3f))
+                ) {
+                    Text("Wireless Debug", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Green)
+                }
+            }
+
+            // Developer options & Pairing
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Button(
+                    onClick = {
+                        try {
+                            val intent = android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
+                            context.startActivity(intent)
+                        } catch (_: Exception) {}
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Card),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Border)
+                ) {
+                    Text("System Settings", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextCol)
+                }
+
+                Button(
+                    onClick = {
+                        try {
+                            val intent = android.content.Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            try {
+                                context.startActivity(android.content.Intent(android.provider.Settings.ACTION_SETTINGS))
+                            } catch (_: Exception) {}
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Amber.copy(alpha = 0.15f)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Amber.copy(alpha = 0.3f))
+                ) {
+                    Text("Device Pairing", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Amber)
                 }
             }
         }

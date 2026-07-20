@@ -188,6 +188,9 @@ bool ClientProxy1_0::parseMessage(const UInt8 *code)
     return recvGrabClipboard();
   } else if (memcmp(code, kMsgDClipboard, 4) == 0) {
     return recvClipboard();
+  } else if (memcmp(code, kMsgCForceFocus, 4) == 0) {
+    m_events->addEvent(Event(m_events->forClientProxy().forceFocus(), getEventTarget()));
+    return true;
   }
   return false;
 }
