@@ -92,7 +92,15 @@ class SynergyForegroundService : Service() {
         instance = this
         createNotificationChannel()
         // Show a neutral "Searching…" notification so startForeground is called ASAP
-        startForeground(NOTIF_ID, buildNotification("Searching for Synergy servers…", null))
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                NOTIF_ID,
+                buildNotification("Searching for Synergy servers…", null),
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            startForeground(NOTIF_ID, buildNotification("Searching for Synergy servers…", null))
+        }
         discovery.start()
         Log.i(TAG, "Service created — discovery started")
     }
@@ -267,6 +275,7 @@ class SynergyForegroundService : Service() {
         networkService = null
         connectionStatus = "Disconnected"
         onStatusChangeListener?.invoke("Disconnected")
+        com.example.synergyclient.service.SynergyInputMethodService.instance?.switchToPreviousKeyboard()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }

@@ -277,6 +277,7 @@ fun MainScreen(
 
     fun disconnect() {
         foregroundService?.stopServiceAndConnection()
+        com.example.synergyclient.service.SynergyInputMethodService.instance?.switchToPreviousKeyboard()
     }
 
     fun selectServer(server: DiscoveredServer) {
@@ -741,7 +742,10 @@ private fun ConnectionCard(
                 colors   = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor    = Accent, unfocusedBorderColor = Border,
                     focusedTextColor      = TextCol, unfocusedTextColor = TextCol,
-                    focusedLabelColor     = Accent,  unfocusedLabelColor = Muted
+                    disabledTextColor     = TextCol.copy(alpha = 0.6f),
+                    focusedLabelColor     = Accent,  unfocusedLabelColor = Muted,
+                    disabledLabelColor    = Muted.copy(alpha = 0.6f),
+                    disabledBorderColor   = Border.copy(alpha = 0.5f)
                 ),
                 modifier  = Modifier.fillMaxWidth(),
                 enabled   = !isConnected && !isConnecting,
@@ -755,7 +759,10 @@ private fun ConnectionCard(
                     label    = { Text("Port", color = Muted, fontSize = 13.sp) },
                     colors   = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Accent, unfocusedBorderColor = Border,
-                        focusedTextColor = TextCol, unfocusedTextColor = TextCol
+                        focusedTextColor = TextCol, unfocusedTextColor = TextCol,
+                        disabledTextColor = TextCol.copy(alpha = 0.6f),
+                        disabledLabelColor = Muted.copy(alpha = 0.6f),
+                        disabledBorderColor = Border.copy(alpha = 0.5f)
                     ),
                     modifier  = Modifier.weight(1f),
                     enabled   = !isConnected && !isConnecting,
@@ -767,7 +774,10 @@ private fun ConnectionCard(
                     label    = { Text("Screen Name", color = Muted, fontSize = 13.sp) },
                     colors   = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Accent, unfocusedBorderColor = Border,
-                        focusedTextColor = TextCol, unfocusedTextColor = TextCol
+                        focusedTextColor = TextCol, unfocusedTextColor = TextCol,
+                        disabledTextColor = TextCol.copy(alpha = 0.6f),
+                        disabledLabelColor = Muted.copy(alpha = 0.6f),
+                        disabledBorderColor = Border.copy(alpha = 0.5f)
                     ),
                     modifier  = Modifier.weight(2f),
                     enabled   = !isConnected && !isConnecting,

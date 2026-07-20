@@ -29,6 +29,7 @@ class SynergyAccessibilityService : AccessibilityService() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var currentDisplayId = Display.DEFAULT_DISPLAY
     private var clipListener: ClipboardManager.OnPrimaryClipChangedListener? = null
+    private var isLocalClipboardChange = false
 
     // ── Cursor state (volatile for cross-thread reads from network thread) ─
     // -1 = not yet positioned by server (cursor hidden until first CINN/DMMV)
@@ -92,11 +93,19 @@ class SynergyAccessibilityService : AccessibilityService() {
             val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             clipListener = ClipboardManager.OnPrimaryClipChangedListener {
                 try {
+                    if (isLocalClipboardChange) {
+                        isLocalClipboardChange = false
+                        return@OnPrimaryClipChangedListener
+                    }
                     val clip = cm.primaryClip
                     if (clip != null && clip.itemCount > 0) {
                         val text = clip.getItemAt(0).text?.toString()
                         if (!text.isNullOrEmpty()) {
                             com.example.synergyclient.data.NotesManager.addClipItem(this, text)
+                            val isClipSync = sharedPrefs?.getBoolean("clipboard_sync", true) ?: true
+                            if (isClipSync) {
+                                com.example.synergyclient.network.SynergyForegroundService.instance?.networkService?.sendClipboardText(text)
+                            }
                         }
                     }
                 } catch (_: Exception) {}
@@ -110,14 +119,6 @@ class SynergyAccessibilityService : AccessibilityService() {
                 info.flags = info.flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_REQUEST_ENHANCED_WEB_ACCESSIBILITY
                 serviceInfo = info
             } catch (_: Exception) {}
-            softKeyboardController.addOnShowModeChangedListener { controller, mode ->
-                val autoHide = sharedPrefs?.getBoolean("auto_hide_keyboard", true) ?: true
-                if (isSynergyActive && autoHide && mode != SHOW_MODE_HIDDEN) {
-                    mainHandler.post {
-                        try { controller.showMode = SHOW_MODE_HIDDEN } catch (_: Exception) {}
-                    }
-                }
-            }
         }
     }
 
@@ -366,20 +367,10 @@ class SynergyAccessibilityService : AccessibilityService() {
 
     fun showKeyboard() {
         isSynergyActive = false
-        mainHandler.post {
-            try {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                    softKeyboardController.showMode = SHOW_MODE_AUTO
-                }
-            } catch (_: Exception) {}
-        }
     }
 
     private fun suppressKeyboard() {
         try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                softKeyboardController.showMode = SHOW_MODE_HIDDEN
-            }
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             val token = if (::overlayView.isInitialized) overlayView.windowToken else null
             if (token != null) imm.hideSoftInputFromWindow(token, 0)
@@ -737,12 +728,62 @@ class SynergyAccessibilityService : AccessibilityService() {
 
     private fun insertString(s: String) {
         val ime = SynergyInputMethodService.instance
-        ime?.typeText(s)
+        if (ime != null && ime.currentInputConnection != null) {
+            ime.typeText(s)
+        } else {
+            val node = focusedEditable() ?: return
+            val currentText = getNodeText(node)
+            val selectionStart = node.textSelectionStart
+            val selectionEnd = node.textSelectionEnd
+            val newText = if (selectionStart >= 0 && selectionEnd >= 0) {
+                currentText.substring(0, selectionStart) + s + currentText.substring(selectionEnd)
+            } else {
+                currentText + s
+            }
+            val args = Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, newText)
+            }
+            node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+            val newCursor = if (selectionStart >= 0) selectionStart + s.length else newText.length
+            val cursorArgs = Bundle().apply {
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, newCursor)
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, newCursor)
+            }
+            node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, cursorArgs)
+            node.recycle()
+        }
     }
 
     private fun deleteLastChar() {
         val ime = SynergyInputMethodService.instance
-        ime?.sendBackspace()
+        if (ime != null && ime.currentInputConnection != null) {
+            ime.sendBackspace()
+        } else {
+            val node = focusedEditable() ?: return
+            val text = getNodeText(node)
+            if (text.isNotEmpty()) {
+                val start = node.textSelectionStart
+                val end = node.textSelectionEnd
+                val newText = if (start > 0 && start == end) {
+                    text.substring(0, start - 1) + text.substring(start)
+                } else if (start >= 0 && start < end) {
+                    text.substring(0, start) + text.substring(end)
+                } else {
+                    text.substring(0, text.length - 1)
+                }
+                val args = Bundle().apply {
+                    putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, newText)
+                }
+                node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+                val newCursor = if (start > 0 && start == end) start - 1 else if (start >= 0) start else newText.length
+                val cursorArgs = Bundle().apply {
+                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, newCursor)
+                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, newCursor)
+                }
+                node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, cursorArgs)
+            }
+            node.recycle()
+        }
     }
 
     /**
@@ -880,6 +921,7 @@ class SynergyAccessibilityService : AccessibilityService() {
                 if (current == text) {
                     return@post
                 }
+                isLocalClipboardChange = true
                 val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 cm.setPrimaryClip(ClipData.newPlainText("Flowport", text))
             } catch (_: Exception) {}

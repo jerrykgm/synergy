@@ -304,12 +304,12 @@ class SynergyNetworkService(
                 if (btn == 1) {
                     svc?.handleMouseDown()
                 } else if (btn == 2) {
+                    // Middle Click → Home Action
+                    svc?.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                } else if (btn == 3) {
                     // Right-click → long-press gesture at cursor = shows native context menu
                     // (copy / paste / select / share) exactly like desktop right-click
                     svc?.handleRightClick()
-                } else if (btn == 3) {
-                    // Middle Click → Home Action
-                    svc?.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
                 }
             }
             return
@@ -382,7 +382,18 @@ class SynergyNetworkService(
             }
 
             "DCLP" -> {
-                // Clipboard sync disabled to prevent OS background copy notifications.
+                if (clipboardEnabled && payload.size > 6) {
+                    try {
+                        val text = String(payload, 6, payload.size - 6, StandardCharsets.UTF_8)
+                        if (text.isNotEmpty()) {
+                            log("← DCLP clipboard data received: ${text.take(30)}...")
+                            svc?.setClipboard(text)
+                            com.example.synergyclient.data.NotesManager.addClipItem(svc ?: return, text)
+                        }
+                    } catch (e: Exception) {
+                        log("Error parsing DCLP: ${e.message}")
+                    }
+                }
             }
 
             "DDRP" -> {
@@ -477,6 +488,48 @@ class SynergyNetworkService(
             log("→ CFFF (Force Focus)")
         } catch (e: Exception) {
             log("Force Focus send error: ${e.message}")
+        }
+    }
+
+    // ── Clipboard sender ───────────────────────────────────────────────────
+
+    fun sendClipboardText(text: String, out: DataOutputStream? = outputStream) {
+        if (out == null) return
+        try {
+            synchronized(out) {
+                // 1) Send CCLP (grab clipboard)
+                // Format: CCLP + 1 byte ID (0) + 4 bytes seqNum (0)
+                val cclpPayload = ByteArray(5)
+                cclpPayload[0] = 0 // ID
+                cclpPayload[1] = 0
+                cclpPayload[2] = 0
+                cclpPayload[3] = 0
+                cclpPayload[4] = 0
+                
+                out.writeInt(4 + cclpPayload.size)
+                out.write("CCLP".toByteArray(StandardCharsets.US_ASCII))
+                out.write(cclpPayload)
+                
+                // 2) Send DCLP (clipboard data)
+                // Format: DCLP + 1 byte ID (0) + 4 bytes seqNum (0) + 1 byte mark (1) + string text
+                val textBytes = text.toByteArray(StandardCharsets.UTF_8)
+                val dclpPayload = ByteArray(6 + textBytes.size)
+                dclpPayload[0] = 0 // ID
+                dclpPayload[1] = 0
+                dclpPayload[2] = 0
+                dclpPayload[3] = 0
+                dclpPayload[4] = 0
+                dclpPayload[5] = 1 // mark (1 = final/complete chunk)
+                System.arraycopy(textBytes, 0, dclpPayload, 6, textBytes.size)
+                
+                out.writeInt(4 + dclpPayload.size)
+                out.write("DCLP".toByteArray(StandardCharsets.US_ASCII))
+                out.write(dclpPayload)
+                out.flush()
+            }
+            log("→ Sent clipboard to server (${text.length} chars)")
+        } catch (e: Exception) {
+            log("Error sending clipboard: ${e.message}")
         }
     }
 

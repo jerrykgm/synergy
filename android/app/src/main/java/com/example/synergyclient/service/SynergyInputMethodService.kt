@@ -30,6 +30,16 @@ class SynergyInputMethodService : InputMethodService() {
         return view
     }
 
+    override fun onEvaluateInputViewShown(): Boolean {
+        // Return false to prevent Android from showing the keyboard container layout
+        return false
+    }
+
+    override fun onEvaluateFullscreenMode(): Boolean {
+        // Prevent full screen mode in landscape orientations
+        return false
+    }
+
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
     }
@@ -128,6 +138,31 @@ class SynergyInputMethodService : InputMethodService() {
     fun sendPaste()     { currentInputConnection?.performContextMenuAction(android.R.id.paste) }
     fun sendCut()       { currentInputConnection?.performContextMenuAction(android.R.id.cut) }
     fun sendSelectAll() { currentInputConnection?.performContextMenuAction(android.R.id.selectAll) }
+
+    fun switchToPreviousKeyboard() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            try {
+                switchToPreviousInputMethod()
+            } catch (e: Exception) {
+                fallbackSwitch()
+            }
+        } else {
+            fallbackSwitch()
+        }
+    }
+
+    private fun fallbackSwitch() {
+        try {
+            val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+            val token = window?.window?.attributes?.token
+            if (token != null) {
+                @Suppress("DEPRECATION")
+                imm?.switchToLastInputMethod(token)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     // ── Generic key sender ────────────────────────────────────────────────
 
