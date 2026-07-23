@@ -268,10 +268,12 @@ class SynergyAccessibilityService : AccessibilityService() {
         isMouseDown = false
         val cx = cursorX.toFloat()
         val cy = cursorY.toFloat()
+        val deltaX = Math.abs(cx - dragStartX)
+        val deltaY = Math.abs(cy - dragStartY)
         val duration = (System.currentTimeMillis() - dragStartTime).coerceAtLeast(10L)
-        
-        if (Math.abs(cx - dragStartX) < 10 && Math.abs(cy - dragStartY) < 10 && duration < 300) {
-            // Treat as a standard click
+
+        // Increase slop tolerance to 35px and 450ms for deliberate clicks
+        if (deltaX < 35 && deltaY < 35 && duration < 450) {
             val now = System.currentTimeMillis()
             val isDoubleClick = (now - lastClickTime) < 400
             lastClickTime = now
@@ -294,14 +296,14 @@ class SynergyAccessibilityService : AccessibilityService() {
                         .addStroke(GestureDescription.StrokeDescription(clickPath, 0, 1))
                 )
             }
-        } else {
-            // Drag gesture: dispatch a swipe gesture matching the path
+        } else if (deltaX >= 35 || deltaY >= 35) {
+            // Real drag gesture: dispatch swipe ONLY if moved at least 35px to eliminate accidental clicks
             dragPath.reset()
             dragPath.moveTo(dragStartX, dragStartY)
             dragPath.lineTo(cx, cy)
             dispatchGestureOnActiveDisplay(
                 GestureDescription.Builder()
-                    .addStroke(GestureDescription.StrokeDescription(dragPath, 0, duration))
+                    .addStroke(GestureDescription.StrokeDescription(dragPath, 0, duration.coerceAtLeast(100L)))
             )
         }
     }
@@ -323,19 +325,57 @@ class SynergyAccessibilityService : AccessibilityService() {
         val y   = cursorY.toFloat()
         val w   = screenW().toFloat()
         val h   = screenH().toFloat()
-        val endX = (x - dx * 3f).coerceIn(0f, w)
-        val endY = (y - dy * 3f).coerceIn(0f, h)
 
-        // Reuse pre-allocated path
+        val absDy = Math.abs(dy)
+        val absDx = Math.abs(dx)
+
+        // Try Accessibility scroll action first (works in ListViews, WebViews, ScrollViews, LazyColumn)
+        if (absDy > absDx) {
+            val root = rootInActiveWindow
+            if (root != null) {
+                val scrollNode = findScrollableNode(root)
+                root.recycle()
+                if (scrollNode != null) {
+                    val action = if (dy > 0) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+                    if (scrollNode.performAction(action)) {
+                        scrollNode.recycle()
+                        return
+                    }
+                    scrollNode.recycle()
+                }
+            }
+        }
+
+        // Gesture swipe fallback for smooth trackpad scrolling
+        // Scale small trackpad deltas (1..20) above Android's touch slop (~24px)
+        val scaleFactor = if (absDy in 1..20 || absDx in 1..20) 60f else 2.5f
+        val stepX = dx * scaleFactor
+        val stepY = dy * scaleFactor
+
+        val endX = (x - stepX).coerceIn(0f, w)
+        val endY = (y - stepY).coerceIn(0f, h)
+
         scrollPath.reset()
         scrollPath.moveTo(x, y)
         scrollPath.lineTo(endX, endY)
 
-        // 50ms duration — fast enough for smooth scroll, short enough for responsiveness
         dispatchGestureOnActiveDisplay(
             GestureDescription.Builder()
-                .addStroke(GestureDescription.StrokeDescription(scrollPath, 0, 50))
+                .addStroke(GestureDescription.StrokeDescription(scrollPath, 0, 75))
         )
+    }
+
+    private fun findScrollableNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        if (node.isScrollable) {
+            return AccessibilityNodeInfo.obtain(node)
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val result = findScrollableNode(child)
+            child.recycle()
+            if (result != null) return result
+        }
+        return null
     }
 
     // ── IME suppression ───────────────────────────────────────────────────
@@ -811,7 +851,30 @@ class SynergyAccessibilityService : AccessibilityService() {
 
     private fun triggerEnterKey() {
         val ime = SynergyInputMethodService.instance
-        ime?.sendEnter()
+        if (ime != null && ime.currentInputConnection != null) {
+            ime.sendEnter()
+            return
+        }
+        val node = focusedEditable()
+        if (node != null) {
+            val isMultiLine = (node.inputType and android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0
+            if (isMultiLine) {
+                insertString("\n")
+            } else {
+                if (!node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    insertString("\n")
+                }
+            }
+            node.recycle()
+        } else {
+            val anyFocused = focusedAnyNode()
+            if (anyFocused != null) {
+                anyFocused.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                anyFocused.recycle()
+            } else {
+                insertString("\n")
+            }
+        }
     }
 
     private fun triggerTab(isShift: Boolean) {
