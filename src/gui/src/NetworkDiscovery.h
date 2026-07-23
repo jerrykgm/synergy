@@ -28,6 +28,7 @@ static constexpr quint16 kDiscoveryPort = 24802;
 
 // Broadcast message identifier
 static const QByteArray kDiscoveryMagic = "SYNERGY_DISCOVER_V1";
+static const QByteArray kDiscoveryMagicV2 = "SYNERGY_DISCOVER_V2";
 
 // How often the server broadcasts its presence (ms)
 static constexpr int kBroadcastIntervalMs = 3000;
@@ -35,11 +36,21 @@ static constexpr int kBroadcastIntervalMs = 3000;
 // How long before a discovered peer is considered gone (ms)
 static constexpr int kPeerTimeoutMs = 10000;
 
-struct DiscoveredServer {
+enum class NodeRole {
+  Server,
+  Client,
+  Unconfigured
+};
+
+struct DiscoveredNode {
   QString hostname;
   QString ip;
-  quint16 port;
+  quint16 port{24800};
+  NodeRole role{NodeRole::Server};
 };
+
+// Backwards compatibility alias
+using DiscoveredServer = DiscoveredNode;
 
 class NetworkDiscovery : public QObject
 {
@@ -49,24 +60,28 @@ public:
   explicit NetworkDiscovery(QObject *parent = nullptr);
   ~NetworkDiscovery() override;
 
-  // Start broadcasting as a server on the local network
+  // Start broadcasting as a server or client on the local network
   void startBroadcasting(const QString &hostname, quint16 synergyPort);
+  void startBroadcastingNode(const QString &hostname, NodeRole role, quint16 synergyPort = 24800);
 
-  // Start listening for server broadcasts (client mode)
+  // Start listening for server/client broadcasts
   void startListening();
 
   // Stop all discovery activity
   void stop();
 
-  // Get currently discovered servers
+  // Get currently discovered servers / nodes
   QList<DiscoveredServer> discoveredServers() const;
+  QList<DiscoveredNode> discoveredNodes() const;
 
 signals:
-  // Emitted when a new server is found or an existing one is updated
+  // Emitted when a new server or node is found or an existing one is updated
   void serverDiscovered(const DiscoveredServer &server);
+  void nodeDiscovered(const DiscoveredNode &node);
 
-  // Emitted when a server disappears from the network
+  // Emitted when a server or node disappears from the network
   void serverLost(const QString &ip);
+  void nodeLost(const QString &ip);
 
 private slots:
   void onBroadcastTimer();
@@ -83,8 +98,9 @@ private:
   QTimer *m_pCleanupTimer = nullptr;
 
   QString m_hostname;
+  NodeRole m_role{NodeRole::Server};
   quint16 m_synergyPort = 24800;
 
-  // ip -> (DiscoveredServer, last-seen timestamp ms)
-  QMap<QString, QPair<DiscoveredServer, qint64>> m_peers;
+  // ip -> (DiscoveredNode, last-seen timestamp ms)
+  QMap<QString, QPair<DiscoveredNode, qint64>> m_peers;
 };

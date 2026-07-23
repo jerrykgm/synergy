@@ -33,7 +33,13 @@ NetworkDiscovery::~NetworkDiscovery()
 
 void NetworkDiscovery::startBroadcasting(const QString &hostname, quint16 synergyPort)
 {
+  startBroadcastingNode(hostname, NodeRole::Server, synergyPort);
+}
+
+void NetworkDiscovery::startBroadcastingNode(const QString &hostname, NodeRole role, quint16 synergyPort)
+{
   m_hostname = hostname;
+  m_role = role;
   m_synergyPort = synergyPort;
 
   if (!m_pBroadcastSocket) {
@@ -100,6 +106,17 @@ QList<DiscoveredServer> NetworkDiscovery::discoveredServers() const
 {
   QList<DiscoveredServer> result;
   for (const auto &entry : m_peers) {
+    if (entry.first.role == NodeRole::Server) {
+      result.append(entry.first);
+    }
+  }
+  return result;
+}
+
+QList<DiscoveredNode> NetworkDiscovery::discoveredNodes() const
+{
+  QList<DiscoveredNode> result;
+  for (const auto &entry : m_peers) {
     result.append(entry.first);
   }
   return result;
@@ -124,6 +141,7 @@ void NetworkDiscovery::onCleanupTimer()
   for (const QString &ip : toRemove) {
     m_peers.remove(ip);
     emit serverLost(ip);
+    emit nodeLost(ip);
   }
 }
 
@@ -145,12 +163,13 @@ void NetworkDiscovery::sendBroadcast()
     return;
   }
 
-  // Build packet: magic | hostname | port
+  // Build packet V2: magic | hostname | role | port
   QByteArray packet;
   QDataStream stream(&packet, QIODevice::WriteOnly);
   stream.setVersion(QDataStream::Qt_6_0);
-  stream << kDiscoveryMagic;
+  stream << kDiscoveryMagicV2;
   stream << m_hostname;
+  stream << static_cast<qint32>(m_role);
   stream << m_synergyPort;
 
   // Broadcast on all network interfaces
@@ -183,14 +202,24 @@ void NetworkDiscovery::parseDatagram(const QByteArray &data, const QHostAddress 
 
   QByteArray magic;
   stream >> magic;
-  if (magic != kDiscoveryMagic) {
-    return;
-  }
 
   QString hostname;
-  quint16 port;
-  stream >> hostname;
-  stream >> port;
+  quint16 port = 24800;
+  NodeRole role = NodeRole::Server;
+
+  if (magic == kDiscoveryMagicV2) {
+    qint32 rawRole = 0;
+    stream >> hostname;
+    stream >> rawRole;
+    stream >> port;
+    role = static_cast<NodeRole>(rawRole);
+  } else if (magic == kDiscoveryMagic) {
+    stream >> hostname;
+    stream >> port;
+    role = NodeRole::Server;
+  } else {
+    return;
+  }
 
   if (stream.status() != QDataStream::Ok) {
     return;
@@ -199,11 +228,14 @@ void NetworkDiscovery::parseDatagram(const QByteArray &data, const QHostAddress 
   const QString ip = sender.toString();
   const qint64 now = QDateTime::currentMSecsSinceEpoch();
 
-  DiscoveredServer server{hostname, ip, port};
+  DiscoveredNode node{hostname, ip, port, role};
   const bool isNew = !m_peers.contains(ip);
-  m_peers[ip] = {server, now};
+  m_peers[ip] = {node, now};
 
   if (isNew) {
-    emit serverDiscovered(server);
+    emit nodeDiscovered(node);
+    if (role == NodeRole::Server) {
+      emit serverDiscovered(node);
+    }
   }
 }

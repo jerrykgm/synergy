@@ -281,6 +281,8 @@ void MainWindow::connectSlots()
   // Network discovery signals
   connect(&m_NetworkDiscovery, &NetworkDiscovery::serverDiscovered, this, &MainWindow::onServerDiscovered);
   connect(&m_NetworkDiscovery, &NetworkDiscovery::serverLost,       this, &MainWindow::onServerLost);
+  connect(&m_NetworkDiscovery, &NetworkDiscovery::nodeDiscovered,   this, &MainWindow::onNodeDiscovered);
+  connect(&m_NetworkDiscovery, &NetworkDiscovery::nodeLost,         this, &MainWindow::onNodeLost);
 
   // Notes synchronization and controls
   connect(m_pNotesOutput, &QPlainTextEdit::textChanged, this, &MainWindow::saveNotes);
@@ -611,10 +613,14 @@ void MainWindow::onServerDiscovered(const DiscoveredServer &server)
     );
   }
 
-  // If the hostname line edit is empty, auto-populate it to make connection easier
-  if (m_pLineEditHostname->text().trimmed().isEmpty()) {
-    m_pLineEditHostname->setText(server.ip);
-    m_CoreProcess.setAddress(server.ip);
+  // If in client mode, auto-populate and auto-connect to discovered server
+  if (m_CoreProcess.mode() == CoreProcess::Mode::Client) {
+    if (m_pLineEditHostname->text().trimmed().isEmpty() || m_pLineEditHostname->text().trimmed() == server.ip) {
+      m_pLineEditHostname->setText(server.ip);
+      m_CoreProcess.setAddress(server.ip);
+      m_ClientConnection.setShowMessage();
+      m_CoreProcess.restart();
+    }
   }
 }
 
@@ -634,6 +640,30 @@ void MainWindow::onServerLost(const QString &ip)
   }
 }
 
+void MainWindow::onNodeDiscovered(const DiscoveredNode &node)
+{
+  qDebug("Discovered network node: %s at %s (Role: %d)",
+         qPrintable(node.hostname), qPrintable(node.ip), static_cast<int>(node.role));
+
+  if (node.role == NodeRole::Server) {
+    onServerDiscovered(node);
+  } else if (node.role == NodeRole::Client && m_CoreProcess.mode() == CoreProcess::Mode::Server) {
+    // Automatically auto-add client to layout if not already existing
+    if (!m_ServerConfig.screenExists(node.hostname)) {
+      qDebug("Auto-adding client screen '%s' to server grid", qPrintable(node.hostname));
+      m_ServerConfig.autoAddScreen(node.hostname);
+      m_ServerConfig.commit();
+      m_ServerConfig.save(m_AppConfig.configFile());
+      m_CoreProcess.restart();
+    }
+  }
+}
+
+void MainWindow::onNodeLost(const QString &ip)
+{
+  onServerLost(ip);
+}
+
 void MainWindow::onWindowSaveTimerTimeout()
 {
   saveWindow();
@@ -641,6 +671,15 @@ void MainWindow::onWindowSaveTimerTimeout()
 
 void MainWindow::onServerConnectionConfigureClient(const QString &clientName)
 {
+  qDebug("Unrecognized client '%s' connected, auto-configuring screen placement", qPrintable(clientName));
+  if (!m_ServerConfig.screenExists(clientName)) {
+    m_ServerConfig.autoAddScreen(clientName);
+    m_ServerConfig.commit();
+    m_ServerConfig.save(m_AppConfig.configFile());
+    m_CoreProcess.restart();
+    return;
+  }
+
   m_ServerConfigDialogState.setVisible(true);
   ServerConfigDialog dialog(this, m_ServerConfig, m_AppConfig);
   if (dialog.addClient(clientName) && dialog.exec() == QDialog::Accepted) {
@@ -679,12 +718,14 @@ void MainWindow::open()
 
   m_TrayIcon.create(trayMenu);
 
-  // Start network discovery: always listen for servers on the local network
+  // Start network discovery: listen for servers and clients on the local network
   m_NetworkDiscovery.startListening();
 
-  // If we are in server mode, also broadcast our presence
+  // Broadcast presence based on server/client mode
   if (m_CoreProcess.mode() == CoreMode::Server) {
-    m_NetworkDiscovery.startBroadcasting(m_AppConfig.screenName(), 24800);
+    m_NetworkDiscovery.startBroadcastingNode(m_AppConfig.screenName(), NodeRole::Server, 24800);
+  } else {
+    m_NetworkDiscovery.startBroadcastingNode(m_AppConfig.screenName(), NodeRole::Client, 24800);
   }
 
   if (m_AppConfig.autoHide()) {
@@ -1200,7 +1241,8 @@ void MainWindow::enableServer(bool enable)
     m_pActionStartCore->setEnabled(true);
     m_CoreProcess.setMode(CoreProcess::Mode::Server);
     m_NetworkDiscovery.stop();
-    m_NetworkDiscovery.startBroadcasting(m_AppConfig.screenName(), 24800);
+    m_NetworkDiscovery.startBroadcastingNode(m_AppConfig.screenName(), NodeRole::Server, 24800);
+    m_NetworkDiscovery.startListening();
 
     // The server can run without any clients configured, and this is actually
     // what you'll want to do the first time since you'll be prompted when an
@@ -1226,8 +1268,9 @@ void MainWindow::enableClient(bool enable)
     m_pButtonToggleStart->setEnabled(true);
     m_pActionStartCore->setEnabled(true);
     m_CoreProcess.setMode(CoreProcess::Mode::Client);
-    // Start auto-discovery of Synergy servers on the local network
+    // Start auto-discovery of Synergy servers and nodes on the local network
     m_NetworkDiscovery.stop();
+    m_NetworkDiscovery.startBroadcastingNode(m_AppConfig.screenName(), NodeRole::Client, 24800);
     m_NetworkDiscovery.startListening();
   } else {
     m_NetworkDiscovery.stop();

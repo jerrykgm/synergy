@@ -149,6 +149,8 @@ private slots:
   void on_m_pComboDiscoveredServers_activated(int index);
   void onServerDiscovered(const DiscoveredServer &server);
   void onServerLost(const QString &ip);
+  void onNodeDiscovered(const DiscoveredNode &node);
+  void onNodeLost(const QString &ip);
 
 private:
   AppConfig &appConfig()
