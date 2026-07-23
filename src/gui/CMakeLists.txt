@@ -126,6 +126,7 @@ elseif(WIN32)
 
 endif()
 
-# Force CMake to re-glob and find NetworkDiscovery files
+# Force CMake to re-glob and find NetworkDiscovery and PeerInputHook files
+target_sources(${GUI_BINARY_NAME} PRIVATE src/PeerInputHook.h src/PeerInputHook.cpp)
 
 

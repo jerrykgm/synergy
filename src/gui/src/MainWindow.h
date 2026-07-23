@@ -38,6 +38,7 @@
 #include "gui/core/WaylandWarnings.h"
 #include "gui/tls/TlsUtility.h"
 #include "NetworkDiscovery.h"
+#include "PeerInputHook.h"
 #include "ui_MainWindowBase.h"
 
 class QAction;
@@ -230,4 +231,6 @@ private:
   deskflow::gui::TlsUtility m_TlsUtility;
   QTimer m_WindowSaveTimer;
   NetworkDiscovery m_NetworkDiscovery;
+  PeerInputHook m_PeerInputHook;
+  void onPhysicalUserActivityDetected();
 };

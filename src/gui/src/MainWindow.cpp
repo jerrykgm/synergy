@@ -284,6 +284,10 @@ void MainWindow::connectSlots()
   connect(&m_NetworkDiscovery, &NetworkDiscovery::nodeDiscovered,   this, &MainWindow::onNodeDiscovered);
   connect(&m_NetworkDiscovery, &NetworkDiscovery::nodeLost,         this, &MainWindow::onNodeLost);
 
+  // Peer input hook for ShareMouse-style bi-directional control
+  connect(&m_PeerInputHook, &PeerInputHook::physicalUserActivityDetected,
+          this, &MainWindow::onPhysicalUserActivityDetected);
+
   // Notes synchronization and controls
   connect(m_pNotesOutput, &QPlainTextEdit::textChanged, this, &MainWindow::saveNotes);
   connect(m_pButtonClearNotes, &QPushButton::clicked, this, [this]() {
@@ -662,6 +666,17 @@ void MainWindow::onNodeDiscovered(const DiscoveredNode &node)
 void MainWindow::onNodeLost(const QString &ip)
 {
   onServerLost(ip);
+}
+
+void MainWindow::onPhysicalUserActivityDetected()
+{
+  // ShareMouse Mode: When physical user input is detected on a client machine,
+  // promote machine to active Server controller so its mouse/keyboard controls the network
+  if (m_CoreProcess.mode() == CoreProcess::Mode::Client) {
+    qDebug("Physical input activity on client detected: switching active control to local machine");
+    enableServer(true);
+    m_CoreProcess.start();
+  }
 }
 
 void MainWindow::onWindowSaveTimerTimeout()
@@ -1272,8 +1287,10 @@ void MainWindow::enableClient(bool enable)
     m_NetworkDiscovery.stop();
     m_NetworkDiscovery.startBroadcastingNode(m_AppConfig.screenName(), NodeRole::Client, 24800);
     m_NetworkDiscovery.startListening();
+    m_PeerInputHook.startMonitoring();
   } else {
     m_NetworkDiscovery.stop();
+    m_PeerInputHook.stopMonitoring();
   }
 }
 
