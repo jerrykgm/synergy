@@ -413,10 +413,10 @@ class SynergyAccessibilityService : AccessibilityService() {
                 val lower = if (keyId in 0x41..0x5A) keyId + 32 else keyId
                 when (lower) {
                     // ── Standard editing ──────────────────────────────────
-                    0x63 -> { nodeAction(AccessibilityNodeInfo.ACTION_COPY);  return@post }
-                    0x76 -> { nodeAction(AccessibilityNodeInfo.ACTION_PASTE); return@post }
-                    0x78 -> { nodeAction(AccessibilityNodeInfo.ACTION_CUT);   return@post }
-                    0x61 -> { nodeAction(AccessibilityNodeInfo.ACTION_SELECT); return@post }
+                    0x63 -> { handleCopy();  return@post }
+                    0x76 -> { handlePaste(); return@post }
+                    0x78 -> { handleCut();   return@post }
+                    0x61 -> { handleSelectAll(); return@post }
 
                     // ── Undo / Redo ───────────────────────────────────────
                     0x7A -> {
@@ -665,8 +665,7 @@ class SynergyAccessibilityService : AccessibilityService() {
 
                 // ── Printable ASCII ───────────────────────────────────────
                 in 0x20..0x7E -> {
-                    val ch = if (isShift && keyId in 0x61..0x7A)
-                        (keyId - 32).toChar() else keyId.toChar()
+                    val ch = getShiftedChar(keyId, isShift)
                     insertChar(ch)
                 }
 
@@ -837,6 +836,74 @@ class SynergyAccessibilityService : AccessibilityService() {
         node.recycle()
     }
 
+    private fun getShiftedChar(keyId: Int, isShift: Boolean): Char {
+        if (!isShift) return keyId.toChar()
+        if (keyId in 0x61..0x7A) return (keyId - 32).toChar()
+        return when (keyId) {
+            '1'.code -> '!'
+            '2'.code -> '@'
+            '3'.code -> '#'
+            '4'.code -> '$'
+            '5'.code -> '%'
+            '6'.code -> '^'
+            '7'.code -> '&'
+            '8'.code -> '*'
+            '9'.code -> '('
+            '0'.code -> ')'
+            '-'.code -> '_'
+            '='.code -> '+'
+            '['.code -> '{'
+            ']'.code -> '}'
+            '\\'.code -> '|'
+            ';'.code -> ':'
+            '\''.code -> '"'
+            ','.code -> '<'
+            '.'.code -> '>'
+            '/'.code -> '?'
+            '`'.code -> '~'
+            else -> keyId.toChar()
+        }
+    }
+
+    private fun handleCopy() {
+        val ime = SynergyInputMethodService.instance
+        if (ime != null) {
+            ime.sendCopy()
+        }
+        nodeAction(AccessibilityNodeInfo.ACTION_COPY)
+    }
+
+    private fun handlePaste() {
+        val ime = SynergyInputMethodService.instance
+        val clipText = getClipboardText()
+        if (ime != null) {
+            if (clipText.isNotEmpty()) {
+                ime.typeText(clipText)
+            }
+            ime.sendPaste()
+        } else if (clipText.isNotEmpty()) {
+            insertString(clipText)
+        } else {
+            nodeAction(AccessibilityNodeInfo.ACTION_PASTE)
+        }
+    }
+
+    private fun handleCut() {
+        val ime = SynergyInputMethodService.instance
+        if (ime != null) {
+            ime.sendCut()
+        }
+        nodeAction(AccessibilityNodeInfo.ACTION_CUT)
+    }
+
+    private fun handleSelectAll() {
+        val ime = SynergyInputMethodService.instance
+        if (ime != null) {
+            ime.sendSelectAll()
+        }
+        nodeAction(AccessibilityNodeInfo.ACTION_SELECT)
+    }
+
     private fun nodeAction(action: Int) {
         val ime = SynergyInputMethodService.instance
         if (ime != null) {
@@ -850,7 +917,7 @@ class SynergyAccessibilityService : AccessibilityService() {
                     else -> 0
                 }
                 if (menuAction != 0) {
-                    ic.performContextMenuAction(menuAction)
+                    try { ic.performContextMenuAction(menuAction) } catch (_: Exception) {}
                     return
                 }
             }

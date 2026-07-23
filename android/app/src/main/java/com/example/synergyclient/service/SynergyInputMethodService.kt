@@ -134,10 +134,33 @@ class SynergyInputMethodService : InputMethodService() {
 
     // ── Copy / Paste / Cut / Select-All via InputConnection ───────────────
 
-    fun sendCopy()      { currentInputConnection?.performContextMenuAction(android.R.id.copy) }
-    fun sendPaste()     { currentInputConnection?.performContextMenuAction(android.R.id.paste) }
-    fun sendCut()       { currentInputConnection?.performContextMenuAction(android.R.id.cut) }
-    fun sendSelectAll() { currentInputConnection?.performContextMenuAction(android.R.id.selectAll) }
+    fun sendCopy() {
+        try { currentInputConnection?.performContextMenuAction(android.R.id.copy) } catch (_: Exception) {}
+        sendKey(KeyEvent.KEYCODE_C, KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON)
+    }
+
+    fun sendPaste() {
+        val clipText = try {
+            val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+            cm?.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()
+        } catch (_: Exception) { null }
+
+        if (!clipText.isNullOrEmpty()) {
+            currentInputConnection?.commitText(clipText, 1)
+        }
+        try { currentInputConnection?.performContextMenuAction(android.R.id.paste) } catch (_: Exception) {}
+        sendKey(KeyEvent.KEYCODE_V, KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON)
+    }
+
+    fun sendCut() {
+        try { currentInputConnection?.performContextMenuAction(android.R.id.cut) } catch (_: Exception) {}
+        sendKey(KeyEvent.KEYCODE_X, KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON)
+    }
+
+    fun sendSelectAll() {
+        try { currentInputConnection?.performContextMenuAction(android.R.id.selectAll) } catch (_: Exception) {}
+        sendKey(KeyEvent.KEYCODE_A, KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON)
+    }
 
     fun switchToPreviousKeyboard() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
