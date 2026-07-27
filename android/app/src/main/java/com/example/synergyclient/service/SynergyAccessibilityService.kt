@@ -269,29 +269,41 @@ class SynergyAccessibilityService : AccessibilityService() {
         val cx = cursorX.toFloat()
         val cy = cursorY.toFloat()
         val duration = (System.currentTimeMillis() - dragStartTime).coerceAtLeast(10L)
+        val distanceX = Math.abs(cx - dragStartX)
+        val distanceY = Math.abs(cy - dragStartY)
         
-        if (Math.abs(cx - dragStartX) < 10 && Math.abs(cy - dragStartY) < 10 && duration < 300) {
-            // Treat as a standard click
-            val now = System.currentTimeMillis()
-            val isDoubleClick = (now - lastClickTime) < 400
-            lastClickTime = now
+        if (distanceX < 30 && distanceY < 30) {
+            if (duration < 500) {
+                // Treat as a standard click
+                val now = System.currentTimeMillis()
+                val isDoubleClick = (now - lastClickTime) < 400
+                lastClickTime = now
 
-            clickPath.reset()
-            clickPath.moveTo(cx, cy)
+                clickPath.reset()
+                clickPath.moveTo(cx, cy)
 
-            if (isDoubleClick) {
-                val stroke1 = GestureDescription.StrokeDescription(clickPath, 0,  1)
-                val stroke2 = GestureDescription.StrokeDescription(clickPath, 40, 1)
-                dispatchGestureOnActiveDisplay(
-                    GestureDescription.Builder()
-                        .addStroke(stroke1)
-                        .addStroke(stroke2)
-                )
-                lastClickTime = 0L
+                if (isDoubleClick) {
+                    val stroke1 = GestureDescription.StrokeDescription(clickPath, 0,  1)
+                    val stroke2 = GestureDescription.StrokeDescription(clickPath, 40, 1)
+                    dispatchGestureOnActiveDisplay(
+                        GestureDescription.Builder()
+                            .addStroke(stroke1)
+                            .addStroke(stroke2)
+                    )
+                    lastClickTime = 0L
+                } else {
+                    dispatchGestureOnActiveDisplay(
+                        GestureDescription.Builder()
+                            .addStroke(GestureDescription.StrokeDescription(clickPath, 0, 1))
+                    )
+                }
             } else {
+                // Treat as a Long Press (Long Click)
+                clickPath.reset()
+                clickPath.moveTo(cx, cy)
                 dispatchGestureOnActiveDisplay(
                     GestureDescription.Builder()
-                        .addStroke(GestureDescription.StrokeDescription(clickPath, 0, 1))
+                        .addStroke(GestureDescription.StrokeDescription(clickPath, 0, 600))
                 )
             }
         } else {
