@@ -684,7 +684,9 @@ class SynergyAccessibilityService : AccessibilityService() {
 
                 // ── Unicode beyond ASCII ──────────────────────────────────
                 in 0x00A0..0x10FFFF -> {
-                    if (keyId !in 0xFE00..0xFFFF) {
+                    // Exclude Private Use Area (0xE000..0xF8FF) and X11 keysyms (0xFF00..0xFFFF)
+                    // to prevent inserting unknown/square symbols for Shift, Alt, Cmd, and special keys.
+                    if (keyId !in 0xE000..0xF8FF && keyId !in 0xFF00..0xFFFF) {
                         val s = if (keyId <= 0xFFFF) keyId.toChar().toString()
                         else String(Character.toChars(keyId))
                         insertString(s)
