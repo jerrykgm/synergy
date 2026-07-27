@@ -81,7 +81,7 @@ fun MainScreen(
         rawName.replace("[^a-zA-Z0-9-_]".toRegex(), "")
     }
 
-    var serverIp      by remember { mutableStateOf(prefs.getString("server_ip",    "10.40.194.37") ?: "10.40.194.37") }
+    var serverIp      by remember { mutableStateOf(prefs.getString("server_ip",    "10.18.218.37") ?: "10.18.218.37") }
     var port          by remember { mutableStateOf(prefs.getString("port",         "24800")        ?: "24800") }
     var clientName    by remember {
         val saved = prefs.getString("client_name", null)
