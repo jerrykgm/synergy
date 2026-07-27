@@ -119,6 +119,67 @@ This client has been optimized and verified to work across the following environ
 
 ---
 
+## 🔍 Troubleshooting Commands & Common Fixes
+
+### 1. Fix "Both toggles on at the same time" (Dual Server/Client state)
+If Synergy opens with both *"Use this computer's keyboard and mouse"* and *"Use another computer's keyboard and mouse"* checked simultaneously, it is caused by stale Windows Registry values.
+
+**Fix via Command Prompt:**
+```cmd
+reg add "HKCU\Software\Synergy\Synergy" /v groupServerChecked /t REG_SZ /d "false" /f
+```
+Or fix in PowerShell:
+```powershell
+Set-ItemProperty -Path "HKCU:\Software\Synergy\Synergy" -Name "groupServerChecked" -Value "false"
+```
+
+---
+
+### 2. Fix "cannot listen for clients: cannot bind address: The specified address is already in use" (Error Code 62097)
+This error occurs when an existing instance of `synergy-server.exe` is already running in the background and listening on port `24800`.
+
+**Check process using port 24800:**
+```powershell
+Get-NetTCPConnection -LocalPort 24800 | Select-Object LocalAddress, LocalPort, OwningProcess
+```
+
+**Force kill all background Synergy processes:**
+```powershell
+Stop-Service Synergy -ErrorAction SilentlyContinue
+Get-Process synergy*, deskflow* -ErrorAction SilentlyContinue | Stop-Process -Force
+```
+
+---
+
+### 3. Fix "Failed to connect to server: server refused client with our name"
+This happens when the Server PC does not have the exact screen name of the Client added to its layout.
+
+**Solution:**
+1. On the **Server PC**, click **Configure Server...**.
+2. Drag a new screen icon onto the grid.
+3. Double-click the screen icon and set its **Screen name** to match the **Client PC's exact computer name** (e.g. `Lenevo` or `MacBook-Pro.local`).
+4. Click **OK** $\rightarrow$ **OK** $\rightarrow$ **Apply**.
+
+---
+
+### 4. Fix "Please check your TLS and firewall settings" / Connection Timeouts
+If the Client fails to connect or times out:
+
+**A. Disable TLS Encryption (if not needed on local network):**
+1. On both computers, open Synergy $\rightarrow$ **Edit** $\rightarrow$ **Settings**.
+2. Uncheck **Enable TLS Encryption** on both machines.
+3. Click **OK** and restart Synergy.
+
+**B. Open Windows Firewall Port 24800 (Server PC):**
+Run in PowerShell (Administrator):
+```powershell
+New-NetFirewallRule -DisplayName "Synergy Port 24800 Inbound" -Direction Inbound -Protocol TCP -LocalPort 24800 -Action Allow
+New-NetFirewallRule -DisplayName "Synergy Port 24800 Outbound" -Direction Outbound -Protocol TCP -LocalPort 24800 -Action Allow
+```
+
+---
+
 ## 📄 License & Upstream Contribution
 This software is licensed under the GPL-3.0 License. If you wish to contribute changes back to the main branch, please visit the upstream development page at [Deskflow Community Github](https://github.com/deskflow/deskflow).
+
 
