@@ -298,7 +298,15 @@ void AppUtilWindows::showNotification(const String &title, const String &text) c
 
 void AppUtilWindows::eventLoop()
 {
-  HANDLE hCloseEvent = CreateEventA(nullptr, TRUE, FALSE, kCloseEventName);
+  SECURITY_DESCRIPTOR sd;
+  InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION);
+  SetSecurityDescriptorDacl(&sd, TRUE, nullptr, FALSE);
+  SECURITY_ATTRIBUTES sa;
+  sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+  sa.lpSecurityDescriptor = &sd;
+  sa.bInheritHandle = FALSE;
+
+  HANDLE hCloseEvent = CreateEventA(&sa, TRUE, FALSE, kCloseEventName);
   if (!hCloseEvent) {
     LOG_CRIT("failed to create event for windows event loop");
     throw XArch(new XArchEvalWindows());
